@@ -1,0 +1,7 @@
+_data/
+_local_models/
+_database/
+.vscode/
+__pycache__/
+*.db
+*.usearch
