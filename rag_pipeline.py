@@ -83,7 +83,7 @@ class RAGPipeline:
             )
         return context_parts, ordered_hits
 
-    def answer_query(self, user_query: str, top_k: int = 4, max_distance = 0.3) -> dict[str, Any]:
+    def answer_query(self, user_query: str, top_k: int = 4, max_distance = 0.5) -> dict[str, Any]:
         context_list, matches = self._build_context_prompt(user_query, top_k, max_distance)
         
         # if there is no data we can retrieve relevant to the query

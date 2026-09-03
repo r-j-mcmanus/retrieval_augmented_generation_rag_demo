@@ -2,8 +2,9 @@ from rag_pipeline import RAGPipeline
 from extractors import BaseDocumentExtractor, PDFExtractor, VTTExtractor, MP3Extractor, HTMLExtractor
 from storage import SQLiteMetadataStore, UsearchVectorStore
 from embedding import BGEEmbeddingService
-from llm_caller import LocalQwenLLMCaller
+from llm_caller import LocalQwenLLMCaller, QwenModels
 
+# hf files in ~/.cache/huggingface/hub
 
 pdf_extractor = PDFExtractor()
 vtt_extractor = VTTExtractor()
@@ -17,7 +18,7 @@ embedding_service = BGEEmbeddingService()
 sql_store = SQLiteMetadataStore("_database/rag_vectors.db")
 vector_store = UsearchVectorStore("_database/vector_index.usearch", embedding_dim=embedding_service.embedding_dim)
 
-llm_caller = LocalQwenLLMCaller()
+llm_caller = LocalQwenLLMCaller(model_name=QwenModels.Qwen_2_5__3B)
 
 pipeline = RAGPipeline(
     extractors=extractors,
@@ -28,10 +29,10 @@ pipeline = RAGPipeline(
 )
 
 # probably best to make a queue trigger that can process files in blob storage as prompted by the queue
-pipeline.index_file(r'_data/vtt/example_video_1.vtt')
-pipeline.index_file(r'_data/vtt/example_video_2.vtt')
-pipeline.index_file(r'_data/pdf/example_pdf_1.pdf')
-pipeline.index_file(r'_data/mp3/example_mp3_1.mp3')
+# pipeline.index_file(r'_data/vtt/example_video_1.vtt')
+# pipeline.index_file(r'_data/vtt/example_video_2.vtt')
+# pipeline.index_file(r'_data/pdf/example_pdf_1.pdf')
+# pipeline.index_file(r'_data/mp3/example_mp3_1.mp3')
 
 # TODO needs some form of Prompt Injection and guard rales
 

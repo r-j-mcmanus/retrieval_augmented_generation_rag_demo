@@ -6,12 +6,16 @@ from .base import LLMCallerInterface
 
 # basically stolen straight from the HF example
 
+class QwenModels:
+    Qwen_2_5__3B = "Qwen/Qwen2.5-3B-Instruct"
+    Qwen_2_5__0_5B = "Qwen/Qwen2.5-0.5B-Instruct"
+
 class LocalQwenLLMCaller(LLMCallerInterface):
     """Using Hugging Face Transformers"""
 
     def __init__(
         self,
-        model_name: str = "Qwen/Qwen2.5-0.5B-Instruct",
+        model_name: str = QwenModels.Qwen_2_5__0_5B,
         max_new_tokens: int = 512,
         temperature: float = 0.05
     ):

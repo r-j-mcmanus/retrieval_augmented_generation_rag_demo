@@ -2,6 +2,7 @@ import json
 import sqlite3
 from pathlib import Path
 from typing import Any
+import threading
 
 from extractors.base import ExtractedChunk
 from .base import MetadataStoreInterface
@@ -11,9 +12,19 @@ class SQLiteMetadataStore(MetadataStoreInterface):
     def __init__(self, db_path: str | Path = "rag_vectors.db"):
         self.db_path = Path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        self.conn = sqlite3.connect(self.db_path)
-        self.conn.row_factory = sqlite3.Row
+        # to allow each thread to access independently
+        # we let each thread have its own 'self._local' 
+        # so it can hold a conn object within it.
+        self._local = threading.local()
         self._create_schema()
+
+    @property
+    def conn(self) -> sqlite3.Connection:
+        if not hasattr(self._local, "conn"):
+            # Created once per thread when that thread first queries
+            self._local.conn = sqlite3.connect(self.db_path)
+            self._local.conn.row_factory = sqlite3.Row  # Optional: return dict-like rows
+        return self._local.conn
 
     def _create_schema(self) -> None:
         self.conn.execute(
