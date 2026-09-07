@@ -10,6 +10,14 @@ It currently supports:
 
 The design is modular via use of the interface pattern allowing additional source types implementing an additional extractor and registering it with the pipeline.
 
+## Set Up
+
+The codebase runs two processes, a streamlet app and a fast api endpoint. The app interacts with the rag system through this endpoint.
+
+To run the streamlet app, run `streamlit run dashboard.py`
+
+To run the api, run `uvicorn api:app --reload`
+
 ## Architecture
 
 The repository is organized around a few core pieces:

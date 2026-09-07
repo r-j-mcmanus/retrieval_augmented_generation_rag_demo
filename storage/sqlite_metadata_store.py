@@ -3,13 +3,15 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 import threading
+import re
 
 from extractors.base import ExtractedChunk
 from .base import MetadataStoreInterface
+from search_result_dataclass import SearchResult
 
 
 class SQLiteMetadataStore(MetadataStoreInterface):
-    def __init__(self, db_path: str | Path = "rag_vectors.db"):
+    def __init__(self, db_path: str | Path = "rag_vectors.db", score_threshold = -10):
         self.db_path = Path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         # to allow each thread to access independently
@@ -17,6 +19,8 @@ class SQLiteMetadataStore(MetadataStoreInterface):
         # so it can hold a conn object within it.
         self._local = threading.local()
         self._create_schema()
+        self._setup_fts()
+        self.score_threshold = score_threshold
 
     @property
     def conn(self) -> sqlite3.Connection:
@@ -94,6 +98,7 @@ class SQLiteMetadataStore(MetadataStoreInterface):
                 ),
             ).lastrowid
             assert isinstance(chunk_id, int)
+            self._insert_fts_record(chunk_id, chunk.content)
             chunk_ids.append(chunk_id)
 
         self.conn.commit()
@@ -135,3 +140,54 @@ class SQLiteMetadataStore(MetadataStoreInterface):
                 }
             )
         return matches
+
+    def _setup_fts(self):
+        """Run once during initialization to create and populate the FTS table."""
+        self.conn.executescript("""
+            CREATE VIRTUAL TABLE IF NOT EXISTS context_fts USING fts5(id, context_body);
+            INSERT INTO context_fts (id, context_body)
+            SELECT CAST(c.chunk_id AS TEXT), c.content
+            FROM chunk_records AS c
+            WHERE NOT EXISTS (
+                SELECT 1 FROM context_fts AS f WHERE f.id = CAST(c.chunk_id AS TEXT)
+            );
+        """)
+        self.conn.commit()
+
+    def _insert_fts_record(self, chunk_id: int, content: str) -> None:
+        self.conn.execute(
+            "INSERT INTO context_fts (id, context_body) VALUES (?, ?)",
+            (str(chunk_id), content),
+        )
+
+    def sparse_search(self, query: str, top_k: int) -> list[SearchResult]:
+        """Aim to find exact keywords in context, good for acronyms and esoteric words that 
+        would otherwise be missed in a dense vector search. 
+        
+        Note: that sql bm25 has most negative as the best match"""
+        safe_query: str = ' OR '.join(re.sub(r'[^\w\s]', '', query).split())
+        if not safe_query:
+            return []
+
+        sql = """
+            SELECT 
+                id, 
+                context_body, 
+                bm25(context_fts) AS score
+            FROM context_fts
+            WHERE context_fts MATCH ?
+            ORDER BY score
+            LIMIT ?;
+        """
+        
+        rows = self.conn.execute(sql, (safe_query, top_k)).fetchall()
+        
+        return [
+            SearchResult(
+                chunk_id = int(m['id']),
+                sparse_rank = int(i),
+                key_word_score = float(-m['score']), # the result is -ve
+                context = m['context_body']
+            )
+            for i, m in enumerate(rows)
+        ]

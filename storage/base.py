@@ -1,21 +1,10 @@
 from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Any
-from dataclasses import dataclass
 
 from extractors.base import ExtractedChunk
+from search_result_dataclass import SearchResult
 
-
-@dataclass
-class VectorSearchResult:
-    keys: list[int]
-    distances: list[float]
-    len: int
-
-    def __getitem__(self, key):
-        if key >= self.len:
-            raise IndexError
-        return {'key': self.keys[key], 'distances': self.distances[key]}
 
 class VectorStoreInterface(ABC):
     """Vector index backend for similarity search."""
@@ -25,7 +14,7 @@ class VectorStoreInterface(ABC):
         """Store embeddings for the given chunk ids."""
 
     @abstractmethod
-    def search(self, query_vector: Any, top_k: int = 3) -> VectorSearchResult:
+    def search(self, query_vector: Any, top_k: int = 3) -> list[SearchResult]:
         """Return matches from the vector index."""
 
 
@@ -45,3 +34,7 @@ class MetadataStoreInterface(ABC):
     @abstractmethod
     def search_by_chunk_ids(self, chunk_ids: list[int]) -> list[dict[str, Any]]:
         """Return rows for the matched chunk ids, including file metadata."""
+
+    @abstractmethod
+    def sparse_search(self, query: str, top_k: int) -> list[SearchResult]:
+        """Performs a sparse context search on the metadata"""

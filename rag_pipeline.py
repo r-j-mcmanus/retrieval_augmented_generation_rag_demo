@@ -5,7 +5,10 @@ from extractors import BaseDocumentExtractor
 from storage import MetadataStoreInterface, VectorStoreInterface
 from embedding import EmbeddingServiceInterface
 from llm_caller import LLMCallerInterface
+from search_result_dataclass import SearchResult
 
+
+# https://www.reddit.com/r/Rag/comments/1rf7xf6/whats_your_experience_with_hybrid_retrieval/
 
 class RAGPipeline:
     def __init__(
@@ -51,40 +54,70 @@ class RAGPipeline:
 
         self.vector_store.add_vectors(chunk_ids=chunk_ids, vectors=encoded_chunk)
 
-    def _build_context_prompt(self, query: str, top_k: int, max_distance: float) -> tuple[list[str], list[dict[str, Any]]]:
-        query_vector = self.encoder.encode_query(query)
-        matches = self.vector_store.search(query_vector, top_k=top_k)
-        if not getattr(matches, "keys", None):
-            return [], []
+    def _add_context(self, results: dict[int, SearchResult]) -> dict[int, SearchResult]:
+        chunk_ids = list(results.keys())
+        retrieved_chunk_data = self.metadata_store.search_by_chunk_ids(chunk_ids)
 
-        chunk_ids = [int(key) for key in matches.keys]
-        rows = self.metadata_store.search_by_chunk_ids(chunk_ids)
-        by_chunk_id = {row["chunk_id"]: row for row in rows}
+        for chunk_data in retrieved_chunk_data:
+            search_result = results[chunk_data['chunk_id']]
+            search_result.source_type = chunk_data['source_type']
+            search_result.context = chunk_data['content']
+            search_result.locator = chunk_data['locator']
+            search_result.file_name = chunk_data['file_name']
+            search_result.metadata = chunk_data['metadata']
+            search_result.doc_id = chunk_data['doc_id']
+
+        return results
+
+    def _combine_results(self, sparse_results: list[SearchResult], dense_results: list[SearchResult], offset: float = 60) -> dict[int, SearchResult]:
+        merged_results_dict: dict[int, SearchResult] = {}
+
+        for item in sparse_results + dense_results:
+            chunk_id = int(item.chunk_id)
+            if chunk_id not in merged_results_dict:
+                merged_results_dict[chunk_id] = item
+            else:
+                existing = merged_results_dict[chunk_id]
+                merged_results_dict[chunk_id] = SearchResult(
+                    chunk_id = chunk_id,
+                    dense_rank = item.dense_rank if item.dense_rank > -1 else existing.dense_rank,
+                    sparse_rank = item.sparse_rank if item.sparse_rank > -1 else existing.sparse_rank,
+                    vector_distance = item.vector_distance if item.vector_distance > -1 else existing.vector_distance,
+                    key_word_score = item.key_word_score if item.key_word_score < 1 else existing.key_word_score,
+                    context = item.context if item.context else existing.context
+                )
+
+        for r in merged_results_dict.values():
+            if r.dense_rank >= 0:
+                r.score += 1 / (offset + r.dense_rank)
+            if r.sparse_rank >= 0:
+                r.score += 1 / (offset + r.sparse_rank)
+
+        return merged_results_dict
+
+    def _build_context_prompt(self, query: str, top_k: int) -> tuple[list[str], list[SearchResult]]:
+        sparse_results = self.metadata_store.sparse_search(query, top_k)
+        
+        query_vector = self.encoder.encode_query(query)
+        dense_results = self.vector_store.search(query_vector, top_k=top_k)
+
+        combined_results = self._combine_results(sparse_results, dense_results)
+        combined_results = self._add_context(combined_results)
 
         context_parts = []
-        ordered_hits = []
-        for key, distance in zip(matches.keys, matches.distances):
-            if distance > max_distance:
-                continue
-            chunk_id = int(key)
-            row = by_chunk_id.get(chunk_id)
-            if row is None:
-                continue
-            row["score"] = float(distance)
-            ordered_hits.append(row)
-
-        for hit in ordered_hits:
+        for r in combined_results.values():
             context_parts.append(
-                f"File: {hit['file_name']}" \
+                f"File: {r.file_name}" \
+                f" | Relevance Score: {r.score}"
                 # f" | Source: {hit['source_type']}" \
                 # f" | Metadata: {json.dumps(hit['metadata'], default=str)}" \
                 # f" | Locator: {json.dumps(hit['locator'], default=str)}" \
-                f" | Content: {hit['content']}"
+                f" | Content: {r.context}"
             )
-        return context_parts, ordered_hits
+        return context_parts, list(combined_results.values())
 
-    def answer_query(self, user_query: str, top_k: int = 4, max_distance = 0.5) -> dict[str, Any]:
-        context_list, matches = self._build_context_prompt(user_query, top_k, max_distance)
+    def answer_query(self, user_query: str, top_k: int = 4) -> dict[str, Any]:
+        context_list, matches = self._build_context_prompt(user_query, top_k)
         
         # if there is no data we can retrieve relevant to the query
         if not matches:
@@ -100,11 +133,11 @@ class RAGPipeline:
 
         match_data = [
             {
-                'source':m.get('file_name'), 
-                'context': m.get('content'), 
-                'score': m.get('score'), 
-                'locator': m.get('locator'), 
-                'metadata': m.get('metadata'), 
+                'source':m.file_name, 
+                'context': m.context, 
+                'score': m.score, 
+                'locator': m.locator, 
+                'metadata': m.metadata, 
                 'context_response': a
             } 
             for m , a in zip(matches, context_answers)

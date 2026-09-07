@@ -2,7 +2,7 @@ from rag_pipeline import RAGPipeline
 from extractors import BaseDocumentExtractor, PDFExtractor, VTTExtractor, MP3Extractor, HTMLExtractor
 from storage import SQLiteMetadataStore, UsearchVectorStore
 from embedding import BGEEmbeddingService
-from llm_caller import LocalQwenLLMCaller, QwenModels
+from llm_caller import LocalQwenLLMCaller, HFModels
 
 # hf files in ~/.cache/huggingface/hub
 
@@ -18,7 +18,7 @@ embedding_service = BGEEmbeddingService()
 sql_store = SQLiteMetadataStore("_database/rag_vectors.db")
 vector_store = UsearchVectorStore("_database/vector_index.usearch", embedding_dim=embedding_service.embedding_dim)
 
-llm_caller = LocalQwenLLMCaller(model_name=QwenModels.Qwen_2_5__3B)
+llm_caller = LocalQwenLLMCaller(model_name=HFModels.Qwen_2_5__3B)
 
 pipeline = RAGPipeline(
     extractors=extractors,

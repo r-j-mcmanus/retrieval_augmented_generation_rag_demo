@@ -76,4 +76,4 @@ if result:
 		score = 1 - match["score"]
 		with st.expander(f"{i}. {match['source']} — relevance: {score:.3f}"):
 			st.markdown("**Context**")
-			st.markdown(match["context"])
+			st.markdown('...' + match["context"] + '...')
