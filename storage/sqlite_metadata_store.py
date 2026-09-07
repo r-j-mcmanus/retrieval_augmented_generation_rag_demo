@@ -104,7 +104,7 @@ class SQLiteMetadataStore(MetadataStoreInterface):
         self.conn.commit()
         return chunk_ids
 
-    def search_by_chunk_ids(self, chunk_ids: list[int]) -> list[dict[str, Any]]:
+    def search_by_chunk_ids(self, chunk_ids: list[int]) -> list[SearchResult]:
         if not chunk_ids:
             return []
 
@@ -126,18 +126,18 @@ class SQLiteMetadataStore(MetadataStoreInterface):
             chunk_ids,
         ).fetchall()
 
-        matches: list[dict[str, Any]] = []
+        matches = []
         for row in rows:
             matches.append(
-                {
-                    "chunk_id": row["chunk_id"],
-                    "doc_id": row["doc_id"],
-                    "source_type": row["source_type"],
-                    "content": row["content"],
-                    "locator": json.loads(row["locator_json"] or "{}"),
-                    "file_name": row["file_name"],
-                    "metadata": json.loads(row["metadata_json"] or "{}"),
-                }
+                SearchResult(
+                    chunk_id=row["chunk_id"],
+                    doc_id=row["doc_id"],
+                    source_type=row["source_type"],
+                    context=row["content"],
+                    locator=json.loads(row["locator_json"] or "{}"),
+                    file_name=row["file_name"],
+                    metadata=json.loads(row["metadata_json"] or "{}")
+                )
             )
         return matches
 

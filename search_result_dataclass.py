@@ -1,5 +1,5 @@
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
 
 @dataclass
 class SearchResult:
@@ -17,3 +17,16 @@ class SearchResult:
 
     locator: dict = field(default_factory=dict)
     metadata: dict = field(default_factory=dict)
+
+    def __or__(self, other: "SearchResult") -> "SearchResult":
+        if not isinstance(other, SearchResult):
+            return NotImplemented
+        
+        self.source_type = other.source_type if not self.source_type else self.source_type
+        self.context = other.context if not self.context else self.context
+        self.locator = other.locator if not self.locator else self.locator
+        self.file_name = other.file_name if not self.source_type else self.source_type
+        self.metadata = other.metadata if not self.metadata else self.metadata
+        self.doc_id = other.doc_id if not self.doc_id else self.doc_id
+
+        return self

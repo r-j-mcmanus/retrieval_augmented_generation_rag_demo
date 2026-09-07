@@ -32,7 +32,7 @@ class MetadataStoreInterface(ABC):
         """Persist metadata about files and chunks."""
 
     @abstractmethod
-    def search_by_chunk_ids(self, chunk_ids: list[int]) -> list[dict[str, Any]]:
+    def search_by_chunk_ids(self, chunk_ids: list[int]) -> list[SearchResult]:
         """Return rows for the matched chunk ids, including file metadata."""
 
     @abstractmethod

@@ -59,13 +59,7 @@ class RAGPipeline:
         retrieved_chunk_data = self.metadata_store.search_by_chunk_ids(chunk_ids)
 
         for chunk_data in retrieved_chunk_data:
-            search_result = results[chunk_data['chunk_id']]
-            search_result.source_type = chunk_data['source_type']
-            search_result.context = chunk_data['content']
-            search_result.locator = chunk_data['locator']
-            search_result.file_name = chunk_data['file_name']
-            search_result.metadata = chunk_data['metadata']
-            search_result.doc_id = chunk_data['doc_id']
+            results[chunk_data.chunk_id] = results[chunk_data.chunk_id] | chunk_data # update missing fields 
 
         return results
 
