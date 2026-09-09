@@ -1,5 +1,5 @@
 from rag_pipeline import RAGPipeline
-from extractors import BaseDocumentExtractor, PDFExtractor, VTTExtractor, MP3Extractor, HTMLExtractor
+from extractors import BaseDocumentExtractor, PDFExtractor, VTTExtractor, MP3Extractor, HTMLExtractor, TXTExtractor
 from storage import SQLiteMetadataStore, UsearchVectorStore
 from embedding import BGEEmbeddingService
 from llm_caller import LocalQwenLLMCaller, HFModels
@@ -12,11 +12,13 @@ from pydantic import BaseModel
 
 
 def _index_data(pipeline: RAGPipeline):
+    pass
     # probably best to make a queue trigger that can process files in blob storage as prompted by the queue
-    pipeline.index_file(r'_data/vtt/example_video_1.vtt')
-    pipeline.index_file(r'_data/vtt/example_video_2.vtt')
-    pipeline.index_file(r'_data/pdf/example_pdf_1.pdf')
-    pipeline.index_file(r'_data/mp3/example_mp3_1.mp3')
+    # pipeline.index_file(r'_data/vtt/example_video_1.vtt')
+    # pipeline.index_file(r'_data/vtt/example_video_2.vtt')
+    # pipeline.index_file(r'_data/pdf/example_pdf_1.pdf')
+    # pipeline.index_file(r'_data/mp3/example_mp3_1.mp3')
+    # pipeline.index_file(r'_data/txt/example_txt_1.mp3')
 
 
 def _make_pipeline() -> RAGPipeline:
@@ -24,8 +26,9 @@ def _make_pipeline() -> RAGPipeline:
     vtt_extractor = VTTExtractor()
     mp3_extractor = MP3Extractor()
     html_extractor = HTMLExtractor()
+    txt_extractor = TXTExtractor()
 
-    extractors: list[BaseDocumentExtractor] = [pdf_extractor, vtt_extractor, mp3_extractor, html_extractor]
+    extractors: list[BaseDocumentExtractor] = [pdf_extractor, vtt_extractor, mp3_extractor, html_extractor, txt_extractor]
 
     embedding_service = BGEEmbeddingService()
 
@@ -45,7 +48,7 @@ def _make_pipeline() -> RAGPipeline:
     return pipeline
 
 PIPELINE = _make_pipeline()
-# _index_data(PIPELINE)
+_index_data(PIPELINE)
 
 app = FastAPI(title="RAG API")
 

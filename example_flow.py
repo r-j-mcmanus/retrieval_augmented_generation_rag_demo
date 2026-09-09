@@ -1,5 +1,5 @@
 from rag_pipeline import RAGPipeline
-from extractors import BaseDocumentExtractor, PDFExtractor, VTTExtractor, MP3Extractor, HTMLExtractor
+from extractors import BaseDocumentExtractor, PDFExtractor, VTTExtractor, MP3Extractor, HTMLExtractor, TXTExtractor
 from storage import SQLiteMetadataStore, UsearchVectorStore
 from embedding import BGEEmbeddingService
 from llm_caller import LocalQwenLLMCaller, HFModels
@@ -10,8 +10,9 @@ pdf_extractor = PDFExtractor()
 vtt_extractor = VTTExtractor()
 mp3_extractor = MP3Extractor()
 html_extractor = HTMLExtractor()
+txt_extractor = TXTExtractor()
 
-extractors: list[BaseDocumentExtractor] = [pdf_extractor, vtt_extractor, mp3_extractor, html_extractor]
+extractors: list[BaseDocumentExtractor] = [pdf_extractor, vtt_extractor, mp3_extractor, html_extractor, txt_extractor]
 
 embedding_service = BGEEmbeddingService()
 
@@ -33,6 +34,8 @@ pipeline = RAGPipeline(
 # pipeline.index_file(r'_data/vtt/example_video_2.vtt')
 # pipeline.index_file(r'_data/pdf/example_pdf_1.pdf')
 # pipeline.index_file(r'_data/mp3/example_mp3_1.mp3')
+# pipeline.index_file(r'_data/txt/example_txt_1.txt')
+# pipeline.index_file(r'_data/vtt/example_video_3.vtt')
 
 # TODO needs some form of Prompt Injection and guard rales
 
@@ -43,3 +46,6 @@ result = pipeline.answer_query(query)
 print(f'Query: {query}')
 print('Answer:', result['response'])
 print('Source:', [m['source'] for m in result['matches']])
+
+# summarise recent life events of Miss Jones
+# What is Mr Smith unhappy about
