@@ -18,7 +18,7 @@ embedding_service = BGEEmbeddingService()
 sql_store = SQLiteMetadataStore("_database/rag_vectors.db")
 vector_store = UsearchVectorStore("_database/vector_index.usearch", embedding_dim=embedding_service.embedding_dim)
 
-llm_caller = LocalQwenLLMCaller(model_name=HFModels.Qwen_2_5__3B)
+llm_caller = LocalQwenLLMCaller(model_name=HFModels.Qwen_2_5__1_5B)
 
 pipeline = RAGPipeline(
     extractors=extractors,

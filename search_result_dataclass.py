@@ -25,7 +25,7 @@ class SearchResult:
         self.source_type = other.source_type if not self.source_type else self.source_type
         self.context = other.context if not self.context else self.context
         self.locator = other.locator if not self.locator else self.locator
-        self.file_name = other.file_name if not self.source_type else self.source_type
+        self.file_name = other.file_name if not self.file_name else self.file_name
         self.metadata = other.metadata if not self.metadata else self.metadata
         self.doc_id = other.doc_id if not self.doc_id else self.doc_id
 

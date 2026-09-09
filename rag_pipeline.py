@@ -127,7 +127,7 @@ class RAGPipeline:
 
         match_data = [
             {
-                'source':m.file_name, 
+                'source': m.file_name, 
                 'context': m.context, 
                 'score': m.score, 
                 'locator': m.locator, 
@@ -135,6 +135,7 @@ class RAGPipeline:
                 'context_response': a
             } 
             for m , a in zip(matches, context_answers)
+            if a != 'not relevant'
         ]
         
         final_response = self._get_final_response(user_query, match_data)
@@ -155,9 +156,12 @@ class RAGPipeline:
             Instructions:
             1. Extract ONLY facts from the snippet that answer the User Query.
             2. Do not assume or extrapolate beyond the provided text, be strict about this.
-            3. Be direct and concise, if the context is not relevant, say only that.
+            3. Only answer using information from the context snippet.
+            4. Be direct and concise, if the context is not relevant, say only that.
             
             Important note: The context may not be relevant to the query, treat it critically.
+
+            If the context is not relevant respond with exactly and only 'not relevant' 
             """
         response = self.llm_caller.call(prompt)
         return response

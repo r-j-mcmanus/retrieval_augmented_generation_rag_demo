@@ -2,7 +2,7 @@ from rag_pipeline import RAGPipeline
 from extractors import BaseDocumentExtractor, PDFExtractor, VTTExtractor, MP3Extractor, HTMLExtractor
 from storage import SQLiteMetadataStore, UsearchVectorStore
 from embedding import BGEEmbeddingService
-from llm_caller import LocalQwenLLMCaller
+from llm_caller import LocalQwenLLMCaller, HFModels
 from fastapi import FastAPI
 from pydantic import BaseModel
 
@@ -32,7 +32,7 @@ def _make_pipeline() -> RAGPipeline:
     sql_store = SQLiteMetadataStore("_database/rag_vectors.db")
     vector_store = UsearchVectorStore("_database/vector_index.usearch", embedding_dim=embedding_service.embedding_dim)
 
-    llm_caller = LocalQwenLLMCaller()
+    llm_caller = LocalQwenLLMCaller(model_name=HFModels.Qwen_2_5__1_5B)
 
     pipeline = RAGPipeline(
         extractors=extractors,
