@@ -7,6 +7,8 @@ from embedding import EmbeddingServiceInterface
 from llm_caller import LLMCallerInterface
 from search_result_dataclass import SearchResult
 from prompt_router import IntentRouter, IntentPath
+from reranking import ReRanker
+from text_preprocessing import TextPreprocessor
 
 # https://www.reddit.com/r/Rag/comments/1rf7xf6/whats_your_experience_with_hybrid_retrieval/
 
@@ -18,7 +20,9 @@ class RAGPipeline:
         vector_store: VectorStoreInterface,
         encoder: EmbeddingServiceInterface,
         llm_caller: LLMCallerInterface,
-        query_router: IntentRouter
+        query_router: IntentRouter,
+        re_ranker: ReRanker,
+        preprocessor: TextPreprocessor
     ):
         self.extractors = {extractor.source_type.lower(): extractor for extractor in extractors}
         self.encoder = encoder
@@ -26,6 +30,8 @@ class RAGPipeline:
         self.vector_store = vector_store
         self.llm_caller = llm_caller
         self.query_router = query_router
+        self.re_ranker = re_ranker
+        self.preprocessor = preprocessor
 
     def _get_extractor_for_file(self, file_path: str | Path) -> BaseDocumentExtractor:
         suffix = Path(file_path).suffix.lower().lstrip(".")
@@ -51,7 +57,7 @@ class RAGPipeline:
             chunks=chunks,
         )
 
-        chunk_contents = (chunk.content for chunk in chunks)
+        chunk_contents = (self.preprocessor(chunk.content) for chunk in chunks)
         encoded_chunk = self.encoder.encode_documents(chunk_contents)
 
         self.vector_store.add_vectors(chunk_ids=chunk_ids, vectors=encoded_chunk)
@@ -91,17 +97,20 @@ class RAGPipeline:
 
         return merged_results_dict
 
-    def _build_context_parts(self, query: str, top_k: int) -> tuple[list[str], list[SearchResult]]:
-        sparse_results = self.metadata_store.sparse_search(query, top_k)
-        
-        query_vector = self.encoder.encode_query(query)
-        dense_results = self.vector_store.search(query_vector, top_k=top_k)
+    def _build_context_parts(self, query: str, top_k: int, retrieval_number: int = 20) -> tuple[list[str], list[SearchResult]]:
+        sparse_results = self.metadata_store.sparse_search(query, retrieval_number)
+
+        processed_query = self.preprocessor(query)
+        query_vector = self.encoder.encode_query(processed_query)
+        dense_results = self.vector_store.search(query_vector, top_k=retrieval_number)
 
         combined_results = self._combine_results(sparse_results, dense_results)
         combined_results = self._add_context(combined_results)
 
+        top_combined_results = self.re_ranker.condense(query, list(combined_results.values()), top_k)
+
         context_parts = []
-        for r in combined_results.values():
+        for r in top_combined_results:
             context_parts.append(
                 f"File: {r.file_name}" \
                 f" | RAG Score: {r.score}"
@@ -110,7 +119,7 @@ class RAGPipeline:
                 # f" | Locator: {json.dumps(hit['locator'], default=str)}" \
                 f" | Content: {r.context}"
             )
-        return context_parts, list(combined_results.values())
+        return context_parts, top_combined_results
 
     def answer_query(self, user_query: str, top_k: int = 10) -> dict[str, Any]:
         # paths, answer = self.query_router.route(user_query, self.llm_caller)

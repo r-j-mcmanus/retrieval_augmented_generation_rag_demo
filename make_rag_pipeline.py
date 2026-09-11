@@ -3,8 +3,9 @@ from extractors import BaseDocumentExtractor, PDFExtractor, VTTExtractor, MP3Ext
 from storage import SQLiteMetadataStore, UsearchVectorStore
 from embedding import BGEEmbeddingService
 from llm_caller import LocalQwenLLMCaller, HFModels
-from prompt_router import IntentRouter, ComparisonPath, GenericPath, NumericalPath, ListPath
-
+from prompt_router import IntentRouter, ComparisonPath, NumericalPath, ListPath
+from reranking import ReRanker
+from text_preprocessing import TextPreprocessor
 
 # hf files in ~/.cache/huggingface/hub
 
@@ -38,13 +39,18 @@ def make_pipeline() -> RAGPipeline:
 
     llm_caller = LocalQwenLLMCaller(model_name=HFModels.Qwen_2_5__1_5B, temperature=0)
 
+    re_ranker = ReRanker()
+    preprocessor = TextPreprocessor()
+
     pipeline = RAGPipeline(
         extractors=extractors,
         metadata_store=sql_store,
         vector_store=vector_store,
         encoder=embedding_service,
         llm_caller=llm_caller,
-        query_router=router
+        query_router=router,
+        re_ranker=re_ranker,
+        preprocessor=preprocessor
     )
 
     return pipeline
