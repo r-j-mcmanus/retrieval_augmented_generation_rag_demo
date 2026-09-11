@@ -1,51 +1,56 @@
 from rag_pipeline import RAGPipeline
-from extractors import BaseDocumentExtractor, PDFExtractor, VTTExtractor, MP3Extractor, HTMLExtractor, TXTExtractor
-from storage import SQLiteMetadataStore, UsearchVectorStore
-from embedding import BGEEmbeddingService
-from llm_caller import LocalQwenLLMCaller, HFModels
+from make_rag_pipeline import make_pipeline
 
-# hf files in ~/.cache/huggingface/hub
-
-pdf_extractor = PDFExtractor()
-vtt_extractor = VTTExtractor()
-mp3_extractor = MP3Extractor()
-html_extractor = HTMLExtractor()
-txt_extractor = TXTExtractor()
-
-extractors: list[BaseDocumentExtractor] = [pdf_extractor, vtt_extractor, mp3_extractor, html_extractor, txt_extractor]
-
-embedding_service = BGEEmbeddingService()
-
-sql_store = SQLiteMetadataStore("_database/rag_vectors.db")
-vector_store = UsearchVectorStore("_database/vector_index.usearch", embedding_dim=embedding_service.embedding_dim)
-
-llm_caller = LocalQwenLLMCaller(model_name=HFModels.Qwen_2_5__1_5B)
-
-pipeline = RAGPipeline(
-    extractors=extractors,
-    metadata_store=sql_store,
-    vector_store=vector_store,
-    encoder=embedding_service,
-    llm_caller=llm_caller
-)
-
-# probably best to make a queue trigger that can process files in blob storage as prompted by the queue
-# pipeline.index_file(r'_data/vtt/example_video_1.vtt')
-# pipeline.index_file(r'_data/vtt/example_video_2.vtt')
-# pipeline.index_file(r'_data/pdf/example_pdf_1.pdf')
-# pipeline.index_file(r'_data/mp3/example_mp3_1.mp3')
-# pipeline.index_file(r'_data/txt/example_txt_1.txt')
-# pipeline.index_file(r'_data/vtt/example_video_3.vtt')
 
 # TODO needs some form of Prompt Injection and guard rales
+# hf files in ~/.cache/huggingface/hub
 
-# probably best to make an https endpoint that takes a query in the request
-print('-'*20)
-query = 'tell me about mr bean\'s mortgage'
-result = pipeline.answer_query(query)
-print(f'Query: {query}')
-print('Answer:', result['response'])
-print('Source:', [m['source'] for m in result['matches']])
+def _index_data(pipeline: RAGPipeline):
+    # probably best to make a queue trigger that can process files in blob storage as prompted by the queue
+    pipeline.index_file(r'_data/vtt/example_video_1.vtt')
+    pipeline.index_file(r'_data/vtt/example_video_2.vtt')
+    pipeline.index_file(r'_data/vtt/example_video_3.vtt')
+    pipeline.index_file(r'_data/vtt/example_video_4.vtt')
+    pipeline.index_file(r'_data/pdf/example_pdf_1.pdf')
+    pipeline.index_file(r'_data/mp3/example_mp3_1.mp3')
+    pipeline.index_file(r'_data/txt/example_txt_1.mp3')
+    pipeline.index_file(r'_data/eml/example_eml_1.eml')
 
+def answer(query: str, pipeline: RAGPipeline):
+    # print('-'*20)
+    result = pipeline.answer_query(query)
+    # print(f'Query: {query}')
+    # print('Answer:', result['response'])
+    # print('Source:', [m['source'] for m in result['matches']])
+    return result
+
+_pipeline = make_pipeline()
+
+# answer('list unhappy clients', pipeline)
+# answer('tell me about mr bean\'s mortgage', pipeline)
+result1 = answer('summarise recent life events of Miss Jones', _pipeline)
+result2 = answer('What is Mr Smith unhappy about and what services can we provide to help', _pipeline)
+result3 = answer('List names of clients who may be in need of mortgage or new wealth services and why they are of interest', _pipeline)
+result4 = answer('List names of clients who have expressed dissatisfaction with us and why the clients are of interest', _pipeline)
+result5 = answer('List common themes of dissatisfaction our clients have recently expressed', _pipeline)
+
+print('*'*10)
+print('*'*10)
+print('*'*10)
+print(result1['response'])
+print('*'*10)
+print(result2['response'])
+print('*'*10)
+print(result3['response'])
+print('*'*10)
+print(result4['response'])
+print('*'*10)
+print(result5['response'])
+
+# example Qs
+# ---------- 
 # summarise recent life events of Miss Jones
-# What is Mr Smith unhappy about
+# What is Mr Smith unhappy about and what services can evelyn partners provide to help
+# List names of clients who may be in need of mortgage or new wealth services and why they are of interest
+# List names of clients who have expressed dissatisfaction with us and why the clients are of interest
+# List common themes of dissatisfaction our clients have recently expressed
