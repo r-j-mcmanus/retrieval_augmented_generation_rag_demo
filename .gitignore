@@ -1,6 +1,7 @@
 _data/
 _local_models/
 _database/
+_*/
 .vscode/
 __pycache__/
 *.db

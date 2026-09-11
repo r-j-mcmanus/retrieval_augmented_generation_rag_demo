@@ -7,10 +7,8 @@ from .base import BaseDocumentExtractor, ExtractedChunk
 
 
 class HTMLExtractor(BaseDocumentExtractor):
-    def __init__(self, chunk_size=10, step_size=5):
+    def __init__(self):
         super().__init__(source_type="html")
-        self.chunk_size = chunk_size
-        self.step_size = step_size
 
     def _clean_text(self, text: str) -> str:
         return " ".join(text.split())
@@ -48,27 +46,10 @@ class HTMLExtractor(BaseDocumentExtractor):
 
     def extract(self, file_path: str | Path) -> list[ExtractedChunk]:
         blocks, _ = self._extract_content_blocks(file_path)
-
-        chunks: list[ExtractedChunk] = []
-        for i in range(0, len(blocks), self.step_size):
-            window = blocks[i : i + self.chunk_size]
-            if not window:
-                break
-
-            combined_text = " ".join(window)
-            chunks.append(
-                ExtractedChunk(
-                    content=combined_text,
-                    locator={
-                        "start_block": i + 1,
-                        "end_block": i + len(window),
-                        "block_count": len(window),
-                    },
-                    source_type=self.source_type,
-                )
-            )
-
-        return chunks
+        return [
+            ExtractedChunk(content=content, source_type=self.source_type)
+            for content in self._chunker("\n\n".join(blocks))
+        ]
 
     def get_useful_metadata(self, file_path: str | Path) -> dict[str, Any]:
         file_path = Path(file_path)

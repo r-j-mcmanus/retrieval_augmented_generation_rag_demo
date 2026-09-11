@@ -5,6 +5,7 @@ from typing import Any
 from datetime import datetime
 
 import win32security
+import chonkie
 
 
 @dataclass
@@ -22,6 +23,16 @@ class BaseDocumentExtractor(ABC):
 
     def __init__(self, source_type: str):
         self.source_type = source_type
+        self._chunk_pipeline = (
+            chonkie.Pipeline()
+                .chunk_with(
+                    "recursive",
+                    chunk_size=2048,
+                    recipe="markdown",
+                )
+                .chunk_with("semantic", chunk_size=512)
+                .refine_with("overlap", context_size=128)
+        )
 
     @abstractmethod
     def extract(self, file_path: str | Path) -> list[ExtractedChunk]:
@@ -47,3 +58,11 @@ class BaseDocumentExtractor(ABC):
             "created_by": self._get_file_owner_windows(file_path),
             "file_format": self.source_type,
         }
+
+    def _chunker(self, text: str) -> list[str]:
+        if not text.strip():
+            return []
+
+        document = self._chunk_pipeline.run(text)
+        assert not isinstance(document, list)
+        return [chunk.text for chunk in document.chunks]

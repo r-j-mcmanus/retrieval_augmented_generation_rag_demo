@@ -7,38 +7,21 @@ from .base import BaseDocumentExtractor, ExtractedChunk
 
 
 class PDFExtractor(BaseDocumentExtractor):
-    def __init__(self, chunk_word_count = 100, overlap_ratio = 0.2):
+    def __init__(self):
         super().__init__(source_type="pdf")
-        self.chunk_word_count = chunk_word_count
-        self.overlap_ratio = overlap_ratio
 
     def extract(self, file_path: str | Path) -> list[ExtractedChunk]:
         reader = PdfReader(str(file_path))
 
-        words = []
+        pages = []
         for page in reader.pages:
-            text = page.extract_text() or ""
-            words.extend(text.split())
-        
-        chunks: list[ExtractedChunk] = []
-        step_size: int = max(1, int(self.chunk_word_count * (1.0 - self.overlap_ratio)))
-        for i in range(0, len(words), step_size):
-            window = words[i : i + self.chunk_word_count]
+            pages.append(page.extract_text() or "")
 
-            if not window:
-                break
-
-            content = " ".join(window)
-
-            chunks.append(
-                ExtractedChunk(
-                    content=content,
-                    locator={},
-                    source_type=self.source_type,
-                )
-            )
-
-        return chunks
+        text = "\n\n".join(pages)
+        return [
+            ExtractedChunk(content=content, source_type=self.source_type)
+            for content in self._chunker(text)
+        ]
 
     def get_useful_metadata(self, file_path: str | Path) -> dict[str, Any]:
         file_path = Path(file_path)

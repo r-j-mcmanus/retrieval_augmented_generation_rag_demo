@@ -1,5 +1,5 @@
 
-from dataclasses import dataclass, field, fields
+from dataclasses import dataclass, field
 
 @dataclass
 class SearchResult:

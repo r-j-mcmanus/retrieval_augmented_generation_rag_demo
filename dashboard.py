@@ -59,6 +59,7 @@ st.caption(f"{len(selected_files)} of {len(data_files)} files selected")
 
 st.subheader("Query")
 with st.form("query_form"):
+	client_ref = st.selectbox("Client Reference", options=[123,654,987])
 	query = st.text_input("Enter a question", placeholder="Ask something about the selected files")
 	submitted = st.form_submit_button("Ask")
 

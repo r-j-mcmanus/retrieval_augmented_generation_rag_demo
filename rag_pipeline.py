@@ -126,12 +126,16 @@ class RAGPipeline:
         paths = []
         answer = ''
 
-        context_list, matches = self._build_context_parts(user_query, top_k)
+        query_clean = self.preprocessor(user_query)
+
+
+        context_list, matches = self._build_context_parts(query_clean, top_k)
         
         # if there is no data we can retrieve relevant to the query
         if not matches:
             return {
                 "query": user_query,
+                "cleaned_query": query_clean,
                 "matches": [],
                 "response": 'No relevant context',
                 "intents": {

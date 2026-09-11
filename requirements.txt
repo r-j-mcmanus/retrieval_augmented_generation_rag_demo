@@ -1,0 +1,14 @@
+chonkie
+streamlit
+pydantic
+fastapi
+sqlite3
+usearch
+numpy
+transformers
+torch
+bs4
+faster_whisper
+pypdf
+webvtt
+win32security

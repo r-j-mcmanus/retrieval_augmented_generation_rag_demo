@@ -1,20 +1,30 @@
 from rag_pipeline import RAGPipeline
 from make_rag_pipeline import make_pipeline
 
-
+# TODO Auth layer
 # TODO needs some form of Prompt Injection and guard rales
+# TODO better chunking, look into chonkie
+# TODO maybe 'tools' so that the llm can ask for additional info that you would not expect to get from rag but would help the query 
+# like:
+# llm_tools = {
+#     "get_market_data": get_market_data,
+#     "get_portfolio": get_portfolio,
+#     "get_products": get_products,
+# }
+
 # hf files in ~/.cache/huggingface/hub
 
-def _index_data(pipeline: RAGPipeline):
+def index_data(pipeline: RAGPipeline):
+    pass
     # probably best to make a queue trigger that can process files in blob storage as prompted by the queue
-    pipeline.index_file(r'_data/vtt/example_video_1.vtt')
-    pipeline.index_file(r'_data/vtt/example_video_2.vtt')
-    pipeline.index_file(r'_data/vtt/example_video_3.vtt')
-    pipeline.index_file(r'_data/vtt/example_video_4.vtt')
-    pipeline.index_file(r'_data/pdf/example_pdf_1.pdf')
-    pipeline.index_file(r'_data/mp3/example_mp3_1.mp3')
-    pipeline.index_file(r'_data/txt/example_txt_1.mp3')
-    pipeline.index_file(r'_data/eml/example_eml_1.eml')
+    # pipeline.index_file(r'_data/vtt/example_video_1.vtt')
+    # pipeline.index_file(r'_data/vtt/example_video_2.vtt')
+    # pipeline.index_file(r'_data/vtt/example_video_3.vtt')
+    # pipeline.index_file(r'_data/vtt/example_video_4.vtt')
+    # pipeline.index_file(r'_data/pdf/example_pdf_1.pdf')
+    # pipeline.index_file(r'_data/mp3/example_mp3_1.mp3')
+    # pipeline.index_file(r'_data/txt/example_txt_1.txt')
+    # pipeline.index_file(r'_data/eml/example_email_1.eml')
 
 def answer(query: str, pipeline: RAGPipeline):
     # print('-'*20)
@@ -25,6 +35,8 @@ def answer(query: str, pipeline: RAGPipeline):
     return result
 
 _pipeline = make_pipeline()
+
+index_data(_pipeline)
 
 # answer('list unhappy clients', pipeline)
 # answer('tell me about mr bean\'s mortgage', pipeline)

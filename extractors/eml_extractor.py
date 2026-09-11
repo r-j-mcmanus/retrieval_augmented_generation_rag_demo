@@ -8,13 +8,10 @@ from email.parser import BytesParser
 
 from .base import BaseDocumentExtractor, ExtractedChunk
 
-# 100% vibe coded, I dont stand by the reliability of it
 
 class EMLExtractor(BaseDocumentExtractor):
-    def __init__(self, chunk_word_count = 100, overlap_ratio = 0.2):
+    def __init__(self):
         super().__init__(source_type="eml")
-        self.chunk_word_count = chunk_word_count
-        self.overlap_ratio = overlap_ratio
 
     def _parse_email_text(self, file_path: str | Path) -> str:
         with open(file_path, "rb") as eml_file:
@@ -49,27 +46,10 @@ class EMLExtractor(BaseDocumentExtractor):
 
     def extract(self, file_path: str | Path) -> list[ExtractedChunk]:
         text = self._parse_email_text(file_path)
-        words = text.split()
-
-        chunks: list[ExtractedChunk] = []
-        step_size: int = max(1, int(self.chunk_word_count * (1.0 - self.overlap_ratio)))
-        for i in range(0, len(words), step_size):
-            window = words[i : i + self.chunk_word_count]
-
-            if not window:
-                break
-
-            content = " ".join(window)
-
-            chunks.append(
-                ExtractedChunk(
-                    content=content,
-                    locator={},
-                    source_type=self.source_type,
-                )
-            )
-
-        return chunks
+        return [
+            ExtractedChunk(content=content, source_type=self.source_type)
+            for content in self._chunker(text)
+        ]
 
     def get_useful_metadata(self, file_path: str | Path) -> dict[str, Any]:
         file_path = Path(file_path)
