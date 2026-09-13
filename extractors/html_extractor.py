@@ -29,13 +29,49 @@ class HTMLExtractor(BaseDocumentExtractor):
         if title_tag and title_tag.get_text(strip=True):
             title = self._clean_text(title_tag.get_text(" "))
 
+        def render_inline(node: Any) -> str:
+            if not getattr(node, "name", None):
+                return str(node)
+
+            tag_name = node.name
+            if tag_name in {"ul", "ol"}:
+                return ""
+            if tag_name == "br":
+                return "\n"
+
+            content = "".join(render_inline(child) for child in node.children)
+            content = self._clean_text(content)
+            if not content:
+                return ""
+            if tag_name in {"strong", "b"}:
+                return f"**{content}**"
+            if tag_name in {"em", "i"}:
+                return f"*{content}*"
+            if tag_name == "code":
+                return f"`{content}`"
+            if tag_name == "a" and node.get("href"):
+                return f"[{content}]({node['href']})"
+            return content
+
         blocks: list[str] = []
-        for node in article.find_all(["p", "h1", "h2", "h3", "h4", "h5", "h6", "li", "div"]):
-            text = self._clean_text(node.get_text(" ", strip=True))
+        block_tags = {"p", "h1", "h2", "h3", "h4", "h5", "h6", "li", "div"}
+        semantic_block_tags = ["p", "h1", "h2", "h3", "h4", "h5", "h6", "li"]
+        for node in article.find_all(list(block_tags)):
+            if node.name == "div" and node.find(list(block_tags)):
+                continue
+            if node.find_parent(semantic_block_tags):
+                continue
+
+            text = render_inline(node)
+            text = self._clean_text(text)
             if not text:
                 continue
             if len(text) < 25 and node.name in {"div", "li"}:
                 continue
+            if node.name.startswith("h"):
+                text = f"{'#' * int(node.name[1:])} {text}"
+            elif node.name == "li":
+                text = f"- {text}"
             blocks.append(text)
 
         if not blocks:

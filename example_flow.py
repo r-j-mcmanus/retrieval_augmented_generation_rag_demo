@@ -3,7 +3,9 @@ from make_rag_pipeline import make_pipeline
 
 # TODO Auth layer
 # TODO needs some form of Prompt Injection and guard rales
-# TODO better chunking, look into chonkie
+# TODO VLM-based document parsing
+# TODO k-graph
+# TODO glossary 
 # TODO maybe 'tools' so that the llm can ask for additional info that you would not expect to get from rag but would help the query 
 # like:
 # llm_tools = {
