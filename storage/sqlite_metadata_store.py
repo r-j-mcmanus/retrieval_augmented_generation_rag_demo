@@ -1,7 +1,7 @@
 import json
 import sqlite3
 from pathlib import Path
-from typing import Any
+from typing import Any, LiteralString
 import threading
 import re
 
@@ -36,6 +36,7 @@ class SQLiteMetadataStore(MetadataStoreInterface):
             CREATE TABLE IF NOT EXISTS file_metadata (
                 doc_id INTEGER PRIMARY KEY,
                 file_name TEXT NOT NULL,
+                client_reference TEXT,
                 file_created_at TEXT,
                 created_by TEXT,
                 metadata_json TEXT
@@ -62,19 +63,23 @@ class SQLiteMetadataStore(MetadataStoreInterface):
         self,
         file_path: str | Path,
         source_type: str,
+        client_reference: str | int | None,
         metadata: dict[str, Any],
         chunks: list[ExtractedChunk],
     ) -> list[int]:
         """Add one file to the file_metadata table and get the row id"""
         file_path = Path(file_path)
+        if isinstance(client_reference, str):
+            client_reference = str(client_reference).strip()
 
         doc_id = self.conn.execute(
             """
-            INSERT INTO file_metadata (file_name, file_created_at, created_by, metadata_json)
-            VALUES (?, ?, ?, ?)
+            INSERT INTO file_metadata (file_name, client_reference, file_created_at, created_by, metadata_json)
+            VALUES (?, ?, ?, ?, ?)
             """,
             (
                 file_path.name,
+                client_reference,
                 metadata.get("created_at"),
                 metadata.get("created_by"),
                 json.dumps(metadata, default=str),
@@ -104,11 +109,21 @@ class SQLiteMetadataStore(MetadataStoreInterface):
         self.conn.commit()
         return chunk_ids
 
-    def search_by_chunk_ids(self, chunk_ids: list[int]) -> list[SearchResult]:
+    def search_by_chunk_ids(
+        self,
+        chunk_ids: list[int],
+        client_reference: str | int | None = None,
+    ) -> list[SearchResult]:
         if not chunk_ids:
             return []
 
         placeholders = ", ".join("?" for _ in chunk_ids) # n ? for chunk_ids to parse into
+        parameters: list[str | int] = list(chunk_ids)
+        client_filter = ""
+        if client_reference is not None:
+            client_filter = " AND f.client_reference = ?"
+            parameters.append(str(client_reference).strip())
+
         rows = self.conn.execute(
             f"""
             SELECT 
@@ -118,12 +133,14 @@ class SQLiteMetadataStore(MetadataStoreInterface):
                 c.content,
                 c.locator_json,
                 f.file_name,
+                f.client_reference,
                 f.metadata_json
             FROM chunk_records as c
             JOIN file_metadata f ON f.doc_id = c.doc_id
             WHERE c.chunk_id IN ({placeholders})
+            {client_filter}
             """,
-            chunk_ids,
+            parameters,
         ).fetchall()
 
         matches = []
@@ -136,10 +153,24 @@ class SQLiteMetadataStore(MetadataStoreInterface):
                     context=row["content"],
                     locator=json.loads(row["locator_json"] or "{}"),
                     file_name=row["file_name"],
-                    metadata=json.loads(row["metadata_json"] or "{}")
+                    metadata=json.loads(row["metadata_json"] or "{}") | {
+                        "client_reference": row["client_reference"]
+                    }
                 )
             )
         return matches
+
+    def get_chunk_ids_for_client_reference(self, client_reference: str | int) -> set[int]:
+        rows = self.conn.execute(
+            """
+            SELECT c.chunk_id
+            FROM chunk_records AS c
+            JOIN file_metadata AS f ON f.doc_id = c.doc_id
+            WHERE f.client_reference = ?
+            """,
+            (str(client_reference).strip(),),
+        ).fetchall()
+        return {int(row["chunk_id"]) for row in rows}
 
     def _setup_fts(self):
         """Run once during initialization to create and populate the FTS table."""
@@ -160,7 +191,12 @@ class SQLiteMetadataStore(MetadataStoreInterface):
             (str(chunk_id), content),
         )
 
-    def sparse_search(self, query: str, top_k: int) -> list[SearchResult]:
+    def sparse_search(
+        self,
+        query: str,
+        top_k: int,
+        client_reference: str | int | None = None,
+    ) -> list[SearchResult]:
         """Aim to find exact keywords in context, good for acronyms and esoteric words that 
         would otherwise be missed in a dense vector search. 
         
@@ -169,19 +205,30 @@ class SQLiteMetadataStore(MetadataStoreInterface):
         if not safe_query:
             return []
 
-        sql = """
+        client_filter = ""
+        parameters: list[str | int] = [safe_query]
+        if client_reference is not None:
+            client_filter = """
+                JOIN chunk_records AS c ON c.chunk_id = CAST(context_fts.id AS INTEGER)
+                JOIN file_metadata AS f ON f.doc_id = c.doc_id
+            """
+            parameters.append(str(client_reference).strip())
+
+        sql: LiteralString = f"""
             SELECT 
-                id, 
-                context_body, 
+                context_fts.id,
+                context_fts.context_body,
                 bm25(context_fts) AS score
             FROM context_fts
+            {client_filter}
             WHERE context_fts MATCH ?
+            {"AND f.client_reference = ?" if client_reference is not None else ""} 
             ORDER BY score
             LIMIT ?;
         """
-        
-        rows = self.conn.execute(sql, (safe_query, top_k)).fetchall()
-        
+        parameters.append(top_k)
+        rows = self.conn.execute(sql, parameters).fetchall()
+
         return [
             SearchResult(
                 chunk_id = int(m['id']),

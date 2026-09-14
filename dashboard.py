@@ -16,10 +16,10 @@ def get_data_files() -> list[Path]:
 		key=lambda path: path.relative_to(DATA_DIR).as_posix().lower(),
 	)
 
-def answer_query(query: str):
+def answer_query(query: str, client_ref: str | int | None = None):
 	response = requests.post(
 		"http://127.0.0.1:8000/query",
-		json={"query": query},
+		json={"query": query, "client_ref": client_ref},
 	)
 	response.raise_for_status()
 	return response.json()
@@ -57,14 +57,26 @@ with st.sidebar:
 
 st.caption(f"{len(selected_files)} of {len(data_files)} files selected")
 
+key_to_name: dict[str | int, str]= {
+	123: 'Mr Smith',
+	456: 'Ms Rose',
+	789: 'Mr Bean',
+	654: 'Miss Jones',
+	876: 'Mr Thor',
+}
+
 st.subheader("Query")
+client_ref = st.selectbox("Client Reference", options=['All'] + list(key_to_name.keys()))
+if client_ref != "All":
+	st.caption(f"Client: {key_to_name[client_ref]}")
+
 with st.form("query_form"):
-	client_ref = st.selectbox("Client Reference", options=['All', 123,654,987])
 	query = st.text_input("Enter a question", placeholder="Ask something about the selected files")
 	submitted = st.form_submit_button("Ask")
 
 if submitted and query.strip():
-	st.session_state["query_result"] = answer_query(query)
+	selected_client_ref = None if client_ref == "All" else client_ref
+	st.session_state["query_result"] = answer_query(query, selected_client_ref)
 	st.session_state["submitted_query"] = query
 
 result = st.session_state.get("query_result")

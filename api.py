@@ -11,8 +11,9 @@ app = FastAPI(title="RAG API")
 
 class QueryRequest(BaseModel):
     query: str
+    client_ref: str | int | None = None
 
 
 @app.post("/query")
 def make_query(request: QueryRequest):
-    return PIPELINE.answer_query(request.query)
+    return PIPELINE.answer_query(request.query, request.client_ref)

@@ -40,7 +40,7 @@ class RAGPipeline:
             raise ValueError(f"No extractor registered for file type: {suffix}")
         return extractor
 
-    def index_file(self, file_path: str | Path):
+    def index_file(self, file_path: str | Path, client_reference: str | int | None):
         file_path = Path(file_path)
         extractor = self._get_extractor_for_file(file_path)
         chunks = extractor.extract(file_path)
@@ -53,6 +53,7 @@ class RAGPipeline:
         chunk_ids = self.metadata_store.insert_document(
             file_path=file_path,
             source_type=extractor.source_type,
+            client_reference=client_reference,
             metadata=useful_metadata,
             chunks=chunks,
         )
@@ -62,9 +63,23 @@ class RAGPipeline:
 
         self.vector_store.add_vectors(chunk_ids=chunk_ids, vectors=encoded_chunk)
 
-    def _add_context(self, results: dict[int, SearchResult]) -> dict[int, SearchResult]:
+    def _add_context(
+        self,
+        results: dict[int, SearchResult],
+        client_reference: str | int | None = None,
+    ) -> dict[int, SearchResult]:
         chunk_ids = list(results.keys())
-        retrieved_chunk_data = self.metadata_store.search_by_chunk_ids(chunk_ids)
+        retrieved_chunk_data = self.metadata_store.search_by_chunk_ids(
+            chunk_ids,
+            client_reference=client_reference,
+        )
+
+        valid_chunk_ids = {chunk_data.chunk_id for chunk_data in retrieved_chunk_data}
+        results = {
+            chunk_id: result
+            for chunk_id, result in results.items()
+            if chunk_id in valid_chunk_ids
+        }
 
         for chunk_data in retrieved_chunk_data:
             results[chunk_data.chunk_id] = results[chunk_data.chunk_id] | chunk_data # update missing fields 
@@ -97,15 +112,35 @@ class RAGPipeline:
 
         return merged_results_dict
 
-    def _build_context_parts(self, query: str, top_k: int, retrieval_number: int = 20) -> tuple[list[str], list[SearchResult]]:
-        sparse_results = self.metadata_store.sparse_search(query, retrieval_number)
+    def _build_context_parts(
+        self,
+        query: str,
+        top_k: int,
+        client_reference: str | int | None = None,
+        retrieval_number: int = 20,
+    ) -> tuple[list[str], list[SearchResult]]:
+        sparse_results = self.metadata_store.sparse_search(
+            query,
+            retrieval_number,
+            client_reference=client_reference,
+        )
+
+        allowed_chunk_ids = None
+        if client_reference is not None:
+            allowed_chunk_ids = self.metadata_store.get_chunk_ids_for_client_reference(
+                client_reference
+            )
 
         processed_query = self.preprocessor(query)
         query_vector = self.encoder.encode_query(processed_query)
-        dense_results = self.vector_store.search(query_vector, top_k=retrieval_number)
+        dense_results = self.vector_store.search(
+            query_vector,
+            top_k=retrieval_number,
+            allowed_chunk_ids=allowed_chunk_ids,
+        )
 
         combined_results = self._combine_results(sparse_results, dense_results)
-        combined_results = self._add_context(combined_results)
+        combined_results = self._add_context(combined_results, client_reference)
 
         top_combined_results = self.re_ranker.condense(query, list(combined_results.values()), top_k)
 
@@ -121,15 +156,23 @@ class RAGPipeline:
             )
         return context_parts, top_combined_results
 
-    def answer_query(self, user_query: str, top_k: int = 10) -> dict[str, Any]:
+    def answer_query(
+        self,
+        user_query: str,
+        client_ref: str | int | None,
+        top_k: int = 10,
+    ) -> dict[str, Any]:
         # paths, answer = self.query_router.route(user_query, self.llm_caller)
         paths = []
         answer = ''
 
         query_clean = self.preprocessor(user_query)
 
-
-        context_list, matches = self._build_context_parts(query_clean, top_k)
+        context_list, matches = self._build_context_parts(
+            query_clean,
+            top_k,
+            client_reference=client_ref,
+        )
         
         # if there is no data we can retrieve relevant to the query
         if not matches:

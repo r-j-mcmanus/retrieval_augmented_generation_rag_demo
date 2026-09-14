@@ -33,8 +33,14 @@ class UsearchVectorStore(VectorStoreInterface):
         self.index.add(keys=chunk_ids, vectors=vectors)
         self.index.save(self.index_path)
 
-    def search(self, query_vector: np.ndarray, top_k: int = 3) -> list[SearchResult]:
-        matches = self.index.search(query_vector, top_k)
+    def search(
+        self,
+        query_vector: np.ndarray,
+        top_k: int = 3,
+        allowed_chunk_ids: set[int] | None = None,
+    ) -> list[SearchResult]:
+        search_k = len(self.index) if allowed_chunk_ids is not None else top_k
+        matches = self.index.search(query_vector, search_k)
         return [
             SearchResult(
                 chunk_id = int(m.key),
@@ -42,4 +48,5 @@ class UsearchVectorStore(VectorStoreInterface):
                 vector_distance = float(m.distance)
             )
             for i, m in enumerate(matches) # type: ignore
+            if allowed_chunk_ids is None or int(m.key) in allowed_chunk_ids
         ]

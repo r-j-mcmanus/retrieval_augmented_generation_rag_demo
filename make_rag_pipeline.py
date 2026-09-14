@@ -1,3 +1,7 @@
+import os
+os.environ["HF_HUB_OFFLINE"] = "1"
+os.environ["TRANSFORMERS_OFFLINE"] = "1"
+
 from rag_pipeline import RAGPipeline
 from extractors import BaseDocumentExtractor, PDFExtractor, VTTExtractor, MP3Extractor, HTMLExtractor, TXTExtractor, EMLExtractor
 from storage import SQLiteMetadataStore, UsearchVectorStore

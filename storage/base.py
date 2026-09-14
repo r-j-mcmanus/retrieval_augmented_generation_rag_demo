@@ -14,7 +14,12 @@ class VectorStoreInterface(ABC):
         """Store embeddings for the given chunk ids."""
 
     @abstractmethod
-    def search(self, query_vector: Any, top_k: int = 3) -> list[SearchResult]:
+    def search(
+        self,
+        query_vector: Any,
+        top_k: int = 3,
+        allowed_chunk_ids: set[int] | None = None,
+    ) -> list[SearchResult]:
         """Return matches from the vector index."""
 
 
@@ -26,15 +31,29 @@ class MetadataStoreInterface(ABC):
         self,
         file_path: str | Path,
         source_type: str,
+        client_reference: str | int | None,
         metadata: dict[str, Any],
         chunks: list[ExtractedChunk],
     )  -> list[int]:
         """Persist metadata about files and chunks."""
 
     @abstractmethod
-    def search_by_chunk_ids(self, chunk_ids: list[int]) -> list[SearchResult]:
+    def search_by_chunk_ids(
+        self,
+        chunk_ids: list[int],
+        client_reference: str | int | None = None,
+    ) -> list[SearchResult]:
         """Return rows for the matched chunk ids, including file metadata."""
 
     @abstractmethod
-    def sparse_search(self, query: str, top_k: int) -> list[SearchResult]:
+    def get_chunk_ids_for_client_reference(self, client_reference: str | int) -> set[int]:
+        """Return all chunk IDs belonging to a client reference."""
+
+    @abstractmethod
+    def sparse_search(
+        self,
+        query: str,
+        top_k: int,
+        client_reference: str | int | None = None,
+    ) -> list[SearchResult]:
         """Performs a sparse context search on the metadata"""
