@@ -22,7 +22,7 @@ class SnowflakeCombinedStore(MetadataStoreInterface, VectorStoreInterface):
         self,
         file_path: str | Path,
         source_type: str,
-        client_reference: str | int,
+        client_reference: int | None,
         metadata: dict[str, Any],
         chunks: list[ExtractedChunk],
     )  -> list[int]:
@@ -32,12 +32,12 @@ class SnowflakeCombinedStore(MetadataStoreInterface, VectorStoreInterface):
     def search_by_chunk_ids(
         self,
         chunk_ids: list[int],
-        client_reference: str | int | None = None,
+        client_reference: int | None = None,
     ) -> list[dict[str, Any]]:
         """Placeholder implementation for Snowflake metadata lookup."""
         raise NotImplementedError("Snowflake metadata lookup not implemented yet.")
 
-    def get_chunk_ids_for_client_reference(self, client_reference: str | int) -> set[int]:
+    def get_chunk_ids_for_client_reference(self, client_reference: int) -> set[int]:
         raise NotImplementedError("Snowflake client reference lookup not implemented yet.")
 
     def add_vectors(self, chunk_ids: list[int], vectors: Any) -> None:

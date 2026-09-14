@@ -8,6 +8,7 @@ import re
 from extractors.base import ExtractedChunk
 from .base import MetadataStoreInterface
 from search_result_dataclass import SearchResult
+from pydantic_dataclasses import QueryRequest
 
 
 class SQLiteMetadataStore(MetadataStoreInterface):
@@ -36,7 +37,7 @@ class SQLiteMetadataStore(MetadataStoreInterface):
             CREATE TABLE IF NOT EXISTS file_metadata (
                 doc_id INTEGER PRIMARY KEY,
                 file_name TEXT NOT NULL,
-                client_reference TEXT,
+                client_reference INTEGER NULL,
                 file_created_at TEXT,
                 created_by TEXT,
                 metadata_json TEXT
@@ -63,15 +64,12 @@ class SQLiteMetadataStore(MetadataStoreInterface):
         self,
         file_path: str | Path,
         source_type: str,
-        client_reference: str | int | None,
+        client_reference: int | None,
         metadata: dict[str, Any],
         chunks: list[ExtractedChunk],
     ) -> list[int]:
         """Add one file to the file_metadata table and get the row id"""
         file_path = Path(file_path)
-        if isinstance(client_reference, str):
-            client_reference = str(client_reference).strip()
-
         doc_id = self.conn.execute(
             """
             INSERT INTO file_metadata (file_name, client_reference, file_created_at, created_by, metadata_json)
@@ -112,17 +110,17 @@ class SQLiteMetadataStore(MetadataStoreInterface):
     def search_by_chunk_ids(
         self,
         chunk_ids: list[int],
-        client_reference: str | int | None = None,
+        client_reference: int | None = None,
     ) -> list[SearchResult]:
         if not chunk_ids:
             return []
 
         placeholders = ", ".join("?" for _ in chunk_ids) # n ? for chunk_ids to parse into
-        parameters: list[str | int] = list(chunk_ids)
+        parameters: list[int] = list(chunk_ids)
         client_filter = ""
         if client_reference is not None:
             client_filter = " AND f.client_reference = ?"
-            parameters.append(str(client_reference).strip())
+            parameters.append(client_reference)
 
         rows = self.conn.execute(
             f"""
@@ -160,7 +158,7 @@ class SQLiteMetadataStore(MetadataStoreInterface):
             )
         return matches
 
-    def get_chunk_ids_for_client_reference(self, client_reference: str | int) -> set[int]:
+    def get_chunk_ids_for_client_reference(self, client_reference: int) -> set[int]:
         rows = self.conn.execute(
             """
             SELECT c.chunk_id
@@ -168,7 +166,18 @@ class SQLiteMetadataStore(MetadataStoreInterface):
             JOIN file_metadata AS f ON f.doc_id = c.doc_id
             WHERE f.client_reference = ?
             """,
-            (str(client_reference).strip(),),
+            (client_reference,),
+        ).fetchall()
+        return {int(row["chunk_id"]) for row in rows}
+
+    def get_chunk_ids_for_internal(self) -> set[int]:
+        rows = self.conn.execute(
+            """
+            SELECT c.chunk_id
+            FROM chunk_records AS c
+            JOIN file_metadata AS f ON f.doc_id = c.doc_id
+            WHERE f.client_reference IS NULL
+            """
         ).fetchall()
         return {int(row["chunk_id"]) for row in rows}
 
@@ -193,26 +202,66 @@ class SQLiteMetadataStore(MetadataStoreInterface):
 
     def sparse_search(
         self,
-        query: str,
-        top_k: int,
-        client_reference: str | int | None = None,
+        query_request: QueryRequest,
+        top_k: int
     ) -> list[SearchResult]:
         """Aim to find exact keywords in context, good for acronyms and esoteric words that 
         would otherwise be missed in a dense vector search. 
         
         Note: that sql bm25 has most negative as the best match"""
-        safe_query: str = ' OR '.join(re.sub(r'[^\w\s]', '', query).split())
-        if not safe_query:
-            return []
 
-        client_filter = ""
-        parameters: list[str | int] = [safe_query]
-        if client_reference is not None:
-            client_filter = """
-                JOIN chunk_records AS c ON c.chunk_id = CAST(context_fts.id AS INTEGER)
-                JOIN file_metadata AS f ON f.doc_id = c.doc_id
-            """
-            parameters.append(str(client_reference).strip())
+        if query_request.internal:
+            return self._sparse_search_internal(query_request, top_k)
+        else:
+            return self._sparse_search_client(query_request, top_k)
+
+    def _sparse_search_client(
+        self,
+        query_request: QueryRequest,
+        top_k: int
+    ) -> list[SearchResult]:
+        """Aim to find exact keywords in context, good for acronyms and esoteric words that 
+        would otherwise be missed in a dense vector search. 
+        
+        Note: that sql bm25 has most negative as the best match"""
+        query = query_request.query
+        client_reference_parameter = [query_request.client_reference] if query_request.client_reference else []
+        
+        sql: LiteralString = f"""
+            SELECT 
+                context_fts.id,
+                context_fts.context_body,
+                bm25(context_fts) AS score
+            FROM context_fts
+            JOIN chunk_records AS c ON c.chunk_id = CAST(context_fts.id AS INTEGER)
+            JOIN file_metadata AS f ON f.doc_id = c.doc_id
+            WHERE context_fts MATCH ?
+            AND f.client_reference IS NOT NULL
+            {"AND f.client_reference = ?" if query_request.client_reference is not None else ""} 
+            ORDER BY score
+            LIMIT ?;
+        """
+        rows = self.conn.execute(sql, [query] + client_reference_parameter + [top_k]).fetchall()
+
+        return [
+            SearchResult(
+                chunk_id = int(m['id']),
+                sparse_rank = int(i),
+                key_word_score = float(-m['score']), # the result is -ve
+                context = m['context_body']
+            )
+            for i, m in enumerate(rows)
+        ]
+
+    def _sparse_search_internal(
+        self,
+        query_request: QueryRequest,
+        top_k: int
+    ) -> list[SearchResult]:
+        """Aim to find exact keywords in context, good for acronyms and esoteric words that 
+        would otherwise be missed in a dense vector search. 
+        
+        Note: that sql bm25 has most negative as the best match"""
 
         sql: LiteralString = f"""
             SELECT 
@@ -220,14 +269,14 @@ class SQLiteMetadataStore(MetadataStoreInterface):
                 context_fts.context_body,
                 bm25(context_fts) AS score
             FROM context_fts
-            {client_filter}
+            JOIN chunk_records AS c ON c.chunk_id = CAST(context_fts.id AS INTEGER)
+            JOIN file_metadata AS f ON f.doc_id = c.doc_id
             WHERE context_fts MATCH ?
-            {"AND f.client_reference = ?" if client_reference is not None else ""} 
+            AND f.client_reference IS NULL 
             ORDER BY score
             LIMIT ?;
         """
-        parameters.append(top_k)
-        rows = self.conn.execute(sql, parameters).fetchall()
+        rows = self.conn.execute(sql, [query_request.query, top_k]).fetchall()
 
         return [
             SearchResult(

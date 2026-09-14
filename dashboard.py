@@ -16,10 +16,14 @@ def get_data_files() -> list[Path]:
 		key=lambda path: path.relative_to(DATA_DIR).as_posix().lower(),
 	)
 
-def answer_query(query: str, client_ref: str | int | None = None):
+def answer_query(query: str, client_ref: int | None, is_internal: bool):
 	response = requests.post(
 		"http://127.0.0.1:8000/query",
-		json={"query": query, "client_ref": client_ref},
+		json={
+			"query": query, 
+			"client_ref": client_ref,
+			"internal": is_internal
+		},
 	)
 	response.raise_for_status()
 	return response.json()
@@ -57,7 +61,7 @@ with st.sidebar:
 
 st.caption(f"{len(selected_files)} of {len(data_files)} files selected")
 
-key_to_name: dict[str | int, str]= {
+key_to_name: dict[int, str]= {
 	123: 'Mr Smith',
 	456: 'Ms Rose',
 	789: 'Mr Bean',
@@ -66,8 +70,8 @@ key_to_name: dict[str | int, str]= {
 }
 
 st.subheader("Query")
-client_ref = st.selectbox("Client Reference", options=['All'] + list(key_to_name.keys()))
-if client_ref != "All":
+client_ref = st.selectbox("Client Reference", options=['All', 'Internal'] + list(key_to_name.keys()))
+if isinstance(client_ref, int):
 	st.caption(f"Client: {key_to_name[client_ref]}")
 
 with st.form("query_form"):
@@ -75,8 +79,9 @@ with st.form("query_form"):
 	submitted = st.form_submit_button("Ask")
 
 if submitted and query.strip():
-	selected_client_ref = None if client_ref == "All" else client_ref
-	st.session_state["query_result"] = answer_query(query, selected_client_ref)
+	is_internal = True if client_ref == 'Internal' else False
+	selected_client_ref = client_ref if isinstance(client_ref, int) else None
+	st.session_state["query_result"] = answer_query(query, selected_client_ref, is_internal)
 	st.session_state["submitted_query"] = query
 
 result = st.session_state.get("query_result")

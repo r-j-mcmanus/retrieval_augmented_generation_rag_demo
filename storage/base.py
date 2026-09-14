@@ -5,6 +5,7 @@ from typing import Any
 from extractors.base import ExtractedChunk
 from search_result_dataclass import SearchResult
 
+from pydantic_dataclasses import QueryRequest
 
 class VectorStoreInterface(ABC):
     """Vector index backend for similarity search."""
@@ -31,7 +32,7 @@ class MetadataStoreInterface(ABC):
         self,
         file_path: str | Path,
         source_type: str,
-        client_reference: str | int | None,
+        client_reference: int | None,
         metadata: dict[str, Any],
         chunks: list[ExtractedChunk],
     )  -> list[int]:
@@ -41,19 +42,23 @@ class MetadataStoreInterface(ABC):
     def search_by_chunk_ids(
         self,
         chunk_ids: list[int],
-        client_reference: str | int | None = None,
+        client_reference: int | None = None,
     ) -> list[SearchResult]:
         """Return rows for the matched chunk ids, including file metadata."""
 
     @abstractmethod
-    def get_chunk_ids_for_client_reference(self, client_reference: str | int) -> set[int]:
+    def get_chunk_ids_for_client_reference(self, client_reference: int) -> set[int]:
+        """Return all chunk IDs belonging to a client reference."""
+        """Return rows for the matched chunk ids, including file metadata."""
+
+    @abstractmethod
+    def get_chunk_ids_for_internal(self) -> set[int]:
         """Return all chunk IDs belonging to a client reference."""
 
     @abstractmethod
     def sparse_search(
         self,
-        query: str,
+        query_request: QueryRequest,
         top_k: int,
-        client_reference: str | int | None = None,
     ) -> list[SearchResult]:
         """Performs a sparse context search on the metadata"""

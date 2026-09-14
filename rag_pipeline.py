@@ -10,6 +10,8 @@ from prompt_router import IntentRouter, IntentPath
 from reranking import ReRanker
 from text_preprocessing import TextPreprocessor
 
+from pydantic_dataclasses import QueryRequest
+
 # https://www.reddit.com/r/Rag/comments/1rf7xf6/whats_your_experience_with_hybrid_retrieval/
 
 class RAGPipeline:
@@ -40,7 +42,7 @@ class RAGPipeline:
             raise ValueError(f"No extractor registered for file type: {suffix}")
         return extractor
 
-    def index_file(self, file_path: str | Path, client_reference: str | int | None):
+    def index_file(self, file_path: str | Path, client_reference: int | None):
         file_path = Path(file_path)
         extractor = self._get_extractor_for_file(file_path)
         chunks = extractor.extract(file_path)
@@ -66,7 +68,7 @@ class RAGPipeline:
     def _add_context(
         self,
         results: dict[int, SearchResult],
-        client_reference: str | int | None = None,
+        client_reference: int | None = None,
     ) -> dict[int, SearchResult]:
         chunk_ids = list(results.keys())
         retrieved_chunk_data = self.metadata_store.search_by_chunk_ids(
@@ -114,24 +116,29 @@ class RAGPipeline:
 
     def _build_context_parts(
         self,
-        query: str,
+        query_request: QueryRequest,
         top_k: int,
-        client_reference: str | int | None = None,
         retrieval_number: int = 20,
     ) -> tuple[list[str], list[SearchResult]]:
+        # TODO different pipelines for internal and client key rather than ifs through out
+        
+        allowed_chunk_ids = None
+        if query_request.client_reference is not None:
+            allowed_chunk_ids = self.metadata_store.get_chunk_ids_for_client_reference(
+                query_request.client_reference
+            )
+        elif query_request.internal:
+            allowed_chunk_ids = self.metadata_store.get_chunk_ids_for_internal()
+
+        if allowed_chunk_ids == set():
+            return [], []
+
         sparse_results = self.metadata_store.sparse_search(
-            query,
-            retrieval_number,
-            client_reference=client_reference,
+            query_request,
+            retrieval_number
         )
 
-        allowed_chunk_ids = None
-        if client_reference is not None:
-            allowed_chunk_ids = self.metadata_store.get_chunk_ids_for_client_reference(
-                client_reference
-            )
-
-        processed_query = self.preprocessor(query)
+        processed_query = self.preprocessor(query_request.query)
         query_vector = self.encoder.encode_query(processed_query)
         dense_results = self.vector_store.search(
             query_vector,
@@ -140,9 +147,9 @@ class RAGPipeline:
         )
 
         combined_results = self._combine_results(sparse_results, dense_results)
-        combined_results = self._add_context(combined_results, client_reference)
+        combined_results = self._add_context(combined_results, query_request.client_reference)
 
-        top_combined_results = self.re_ranker.condense(query, list(combined_results.values()), top_k)
+        top_combined_results = self.re_ranker.condense(query_request.query, list(combined_results.values()), top_k)
 
         context_parts = []
         for r in top_combined_results:
@@ -158,27 +165,31 @@ class RAGPipeline:
 
     def answer_query(
         self,
-        user_query: str,
-        client_ref: str | int | None,
+        user_query_request: QueryRequest,
         top_k: int = 10,
     ) -> dict[str, Any]:
+        # TODO real validation, probably before pipeline
+        assert isinstance(user_query_request, QueryRequest)
+        if user_query_request.internal and user_query_request.client_reference:
+            raise ValueError('If internal, client ref should not be populated')
+
         # paths, answer = self.query_router.route(user_query, self.llm_caller)
         paths = []
         answer = ''
 
-        query_clean = self.preprocessor(user_query)
+        user_query = user_query_request.query
+        user_query_request.query = self.preprocessor(user_query_request.query)
 
         context_list, matches = self._build_context_parts(
-            query_clean,
-            top_k,
-            client_reference=client_ref,
+            user_query_request,
+            top_k
         )
         
         # if there is no data we can retrieve relevant to the query
         if not matches:
             return {
                 "query": user_query,
-                "cleaned_query": query_clean,
+                "cleaned_query": user_query_request.query,
                 "matches": [],
                 "response": 'No relevant context',
                 "intents": {
