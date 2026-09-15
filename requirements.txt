@@ -1,4 +1,5 @@
 chonkie
+chonkie[model2vec]
 streamlit
 pydantic
 fastapi

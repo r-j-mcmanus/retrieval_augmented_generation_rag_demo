@@ -8,7 +8,7 @@ import re
 from extractors.base import ExtractedChunk
 from .base import MetadataStoreInterface
 from search_result_dataclass import SearchResult
-from pydantic_dataclasses import QueryRequest
+from pydantic_dataclasses import QueryRequest, DocumentFilter
 
 
 class SQLiteMetadataStore(MetadataStoreInterface):
@@ -158,26 +158,48 @@ class SQLiteMetadataStore(MetadataStoreInterface):
             )
         return matches
 
-    def get_chunk_ids_for_client_reference(self, client_reference: int) -> set[int]:
-        rows = self.conn.execute(
-            """
-            SELECT c.chunk_id
-            FROM chunk_records AS c
-            JOIN file_metadata AS f ON f.doc_id = c.doc_id
-            WHERE f.client_reference = ?
-            """,
-            (client_reference,),
-        ).fetchall()
-        return {int(row["chunk_id"]) for row in rows}
+    @staticmethod
+    def _document_filter_sql(
+        document_filter: DocumentFilter,
+    ) -> tuple[list[str], list[Any]]:
+        """Make sql conditions based on values in the document filter"""
+        conditions = ["1 = 1"]
+        parameters: list[Any] = []
 
-    def get_chunk_ids_for_internal(self) -> set[int]:
+        if document_filter.client_reference is not None:
+            conditions.append("f.client_reference = ?")
+            parameters.append(document_filter.client_reference)
+        elif not document_filter.include_internal:
+            conditions.append("f.client_reference IS NOT NULL")
+
+        if document_filter.client_references is not None:
+            if not document_filter.client_references:
+                conditions.append("1 = 0")
+            else:
+                placeholders = ", ".join("?" for _ in document_filter.client_references)
+                conditions.append(f"f.client_reference IN ({placeholders})")
+                parameters.extend(document_filter.client_references)
+
+        if document_filter.created_after is not None:
+            conditions.append("f.file_created_at >= ?")
+            parameters.append(document_filter.created_after.isoformat())
+
+        if document_filter.created_before is not None:
+            conditions.append("f.file_created_at <= ?")
+            parameters.append(document_filter.created_before.isoformat())
+
+        return conditions, parameters
+
+    def get_chunk_ids(self, document_filter: DocumentFilter) -> set[int]:
+        conditions, parameters = self._document_filter_sql(document_filter)
         rows = self.conn.execute(
-            """
+            f"""
             SELECT c.chunk_id
             FROM chunk_records AS c
             JOIN file_metadata AS f ON f.doc_id = c.doc_id
-            WHERE f.client_reference IS NULL
-            """
+            WHERE {" AND ".join(conditions)}
+            """,
+            parameters,
         ).fetchall()
         return {int(row["chunk_id"]) for row in rows}
 
@@ -200,24 +222,15 @@ class SQLiteMetadataStore(MetadataStoreInterface):
             (str(chunk_id), content),
         )
 
+    @staticmethod
+    def _build_fts_query(query: str) -> str:
+        terms = re.findall(r"\w+", query, flags=re.UNICODE)
+        return " OR ".join(f'"{term}"' for term in terms)
+
     def sparse_search(
         self,
         query_request: QueryRequest,
-        top_k: int
-    ) -> list[SearchResult]:
-        """Aim to find exact keywords in context, good for acronyms and esoteric words that 
-        would otherwise be missed in a dense vector search. 
-        
-        Note: that sql bm25 has most negative as the best match"""
-
-        if query_request.internal:
-            return self._sparse_search_internal(query_request, top_k)
-        else:
-            return self._sparse_search_client(query_request, top_k)
-
-    def _sparse_search_client(
-        self,
-        query_request: QueryRequest,
+        allowed_chunk_ids: set[int],
         top_k: int
     ) -> list[SearchResult]:
         """Aim to find exact keywords in context, good for acronyms and esoteric words that 
@@ -225,9 +238,14 @@ class SQLiteMetadataStore(MetadataStoreInterface):
         
         Note: that sql bm25 has most negative as the best match"""
         query = query_request.query
-        client_reference_parameter = [query_request.client_reference] if query_request.client_reference else []
+        fts_query = self._build_fts_query(query)
+        if not fts_query:
+            return []
+
+        chunk_ids = sorted(allowed_chunk_ids)
+        placeholders = ", ".join("?" for _ in chunk_ids)
         
-        sql: LiteralString = f"""
+        sql = f"""
             SELECT 
                 context_fts.id,
                 context_fts.context_body,
@@ -236,14 +254,14 @@ class SQLiteMetadataStore(MetadataStoreInterface):
             JOIN chunk_records AS c ON c.chunk_id = CAST(context_fts.id AS INTEGER)
             JOIN file_metadata AS f ON f.doc_id = c.doc_id
             WHERE context_fts MATCH ?
-            AND f.client_reference IS NOT NULL
-            {"AND f.client_reference = ?" if query_request.client_reference is not None else ""} 
+            AND c.chunk_id IN ({placeholders}) 
             ORDER BY score
             LIMIT ?;
         """
-        rows = self.conn.execute(sql, [query] + client_reference_parameter + [top_k]).fetchall()
+        parameters = [fts_query, *chunk_ids, top_k]
+        rows = self.conn.execute(sql, parameters).fetchall()
 
-        return [
+        results = [
             SearchResult(
                 chunk_id = int(m['id']),
                 sparse_rank = int(i),
@@ -252,6 +270,8 @@ class SQLiteMetadataStore(MetadataStoreInterface):
             )
             for i, m in enumerate(rows)
         ]
+
+        return results
 
     def _sparse_search_internal(
         self,
@@ -262,6 +282,9 @@ class SQLiteMetadataStore(MetadataStoreInterface):
         would otherwise be missed in a dense vector search. 
         
         Note: that sql bm25 has most negative as the best match"""
+        fts_query = self._build_fts_query(query_request.query)
+        if not fts_query:
+            return []
 
         sql: LiteralString = f"""
             SELECT 
@@ -276,7 +299,7 @@ class SQLiteMetadataStore(MetadataStoreInterface):
             ORDER BY score
             LIMIT ?;
         """
-        rows = self.conn.execute(sql, [query_request.query, top_k]).fetchall()
+        rows = self.conn.execute(sql, [fts_query, top_k]).fetchall()
 
         return [
             SearchResult(

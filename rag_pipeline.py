@@ -10,7 +10,8 @@ from prompt_router import IntentRouter, IntentPath
 from reranking import ReRanker
 from text_preprocessing import TextPreprocessor
 
-from pydantic_dataclasses import QueryRequest
+from pydantic_dataclasses import QueryRequest, DocumentFilter
+from search_scope_strategy import strategy_selector
 
 # https://www.reddit.com/r/Rag/comments/1rf7xf6/whats_your_experience_with_hybrid_retrieval/
 
@@ -120,23 +121,16 @@ class RAGPipeline:
         top_k: int,
         retrieval_number: int = 20,
     ) -> tuple[list[str], list[SearchResult]]:
-        # TODO different pipelines for internal and client key rather than ifs through out
-        
-        allowed_chunk_ids = None
-        if query_request.client_reference is not None:
-            allowed_chunk_ids = self.metadata_store.get_chunk_ids_for_client_reference(
-                query_request.client_reference
-            )
-        elif query_request.internal:
-            allowed_chunk_ids = self.metadata_store.get_chunk_ids_for_internal()
+        # as not all calls can access all files
+        document_filter = strategy_selector(query_request)
+
+        # todo append client ref to vector table
+        allowed_chunk_ids = self.metadata_store.get_chunk_ids(document_filter)
 
         if allowed_chunk_ids == set():
             return [], []
 
-        sparse_results = self.metadata_store.sparse_search(
-            query_request,
-            retrieval_number
-        )
+        sparse_results = self.metadata_store.sparse_search(query_request, allowed_chunk_ids, retrieval_number)
 
         processed_query = self.preprocessor(query_request.query)
         query_vector = self.encoder.encode_query(processed_query)
@@ -154,42 +148,32 @@ class RAGPipeline:
         context_parts = []
         for r in top_combined_results:
             context_parts.append(
-                f"File: {r.file_name}" \
-                f" | RAG Score: {r.score}"
-                # f" | Source: {hit['source_type']}" \
-                # f" | Metadata: {json.dumps(hit['metadata'], default=str)}" \
-                # f" | Locator: {json.dumps(hit['locator'], default=str)}" \
-                f" | Content: {r.context}"
+                f"RAG Score: {r.score} | Content: {r.context}"
             )
         return context_parts, top_combined_results
 
     def answer_query(
         self,
-        user_query_request: QueryRequest,
+        query_request: QueryRequest,
         top_k: int = 10,
     ) -> dict[str, Any]:
         # TODO real validation, probably before pipeline
-        assert isinstance(user_query_request, QueryRequest)
-        if user_query_request.internal and user_query_request.client_reference:
-            raise ValueError('If internal, client ref should not be populated')
+        assert isinstance(query_request, QueryRequest)
 
         # paths, answer = self.query_router.route(user_query, self.llm_caller)
         paths = []
         answer = ''
 
-        user_query = user_query_request.query
-        user_query_request.query = self.preprocessor(user_query_request.query)
+        user_query = query_request.query
+        query_request.query = self.preprocessor(query_request.query)
 
-        context_list, matches = self._build_context_parts(
-            user_query_request,
-            top_k
-        )
+        context_list, matches = self._build_context_parts(query_request, top_k)
         
         # if there is no data we can retrieve relevant to the query
         if not matches:
             return {
                 "query": user_query,
-                "cleaned_query": user_query_request.query,
+                "cleaned_query": query_request.query,
                 "matches": [],
                 "response": 'No relevant context',
                 "intents": {
@@ -232,23 +216,18 @@ class RAGPipeline:
         for p in paths:
             answer = p.evaluate_chunk(user_query, context, self.llm_caller)
             answers.append((answer, p.intent.name))
+            # Intents: {[p.intent.name for p in paths]}
 
-        prompt = f"""You are analysing a contextual snippet from a business document to answer a query.
+        prompt = f"""You are analysing a document snippet to answer a query for a private wealth management firm.
             Context Snippet:
-            {context}
+            `{context}`
 
-            User Query: {user_query}
-
-            Intents: {[p.intent.name for p in paths]}
+            User Query: `{user_query}`
 
             Instructions:
-            1. Extract ONLY facts from the snippet that answer the User Query.
-            2. Do not assume or extrapolate beyond the provided text, be strict about this.
-            3. Only answer using information from the context snippet.
-            4. Be direct and concise, if the context is not relevant, say only that.
+            1. Extract ONLY facts from the snippet relevant to the User Query.
             
-            Important note: The context may not be relevant to the query, treat it critically.
-            If there is no answer relevant, respond exactly with 'not relevant'
+            If there is no relevant information, respond with 'not relevant'
             """
         response = self.llm_caller.call(prompt)
         return response

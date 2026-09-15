@@ -2,6 +2,8 @@ from pathlib import Path
 import requests
 
 import streamlit as st
+from pydantic_dataclasses import QueryRequest
+from pydantic_dataclasses import DocumentScope
 
 # run with streamlit run dashboard.py
 
@@ -16,14 +18,25 @@ def get_data_files() -> list[Path]:
 		key=lambda path: path.relative_to(DATA_DIR).as_posix().lower(),
 	)
 
-def answer_query(query: str, client_ref: int | None, is_internal: bool):
+def answer_query(query: str, scope_selection: str | int | None):
+	client_reference = None
+	if scope_selection == DocumentScope.INTERNAL:
+		scope = DocumentScope.INTERNAL
+	elif scope_selection == DocumentScope.ALL_CLIENTS:
+		scope = DocumentScope.ALL_CLIENTS
+	elif isinstance(scope_selection, int):
+		scope = DocumentScope.CLIENT
+		client_reference = scope_selection
+	else:
+		raise ValueError(f'Invalid scope {scope_selection}')
+
 	response = requests.post(
 		"http://127.0.0.1:8000/query",
-		json={
-			"query": query, 
-			"client_ref": client_ref,
-			"internal": is_internal
-		},
+		json=QueryRequest(
+			query=query, 
+			scope=scope,
+			client_reference=client_reference
+		).model_dump(),
 	)
 	response.raise_for_status()
 	return response.json()
@@ -64,24 +77,23 @@ st.caption(f"{len(selected_files)} of {len(data_files)} files selected")
 key_to_name: dict[int, str]= {
 	123: 'Mr Smith',
 	456: 'Ms Rose',
-	789: 'Mr Bean',
 	654: 'Miss Jones',
+	789: 'Mr Bean',
 	876: 'Mr Thor',
 }
 
 st.subheader("Query")
-client_ref = st.selectbox("Client Reference", options=['All', 'Internal'] + list(key_to_name.keys()))
-if isinstance(client_ref, int):
-	st.caption(f"Client: {key_to_name[client_ref]}")
+options = [DocumentScope.ALL_CLIENTS.name, DocumentScope.INTERNAL.name] + list(key_to_name.keys())
+scope_selection = st.selectbox("Client Reference", options=options)
+if isinstance(scope_selection, int):
+	st.caption(f"Client: {key_to_name[scope_selection]}")
 
 with st.form("query_form"):
 	query = st.text_input("Enter a question", placeholder="Ask something about the selected files")
 	submitted = st.form_submit_button("Ask")
 
 if submitted and query.strip():
-	is_internal = True if client_ref == 'Internal' else False
-	selected_client_ref = client_ref if isinstance(client_ref, int) else None
-	st.session_state["query_result"] = answer_query(query, selected_client_ref, is_internal)
+	st.session_state["query_result"] = answer_query(query, scope_selection)
 	st.session_state["submitted_query"] = query
 
 result = st.session_state.get("query_result")
