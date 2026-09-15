@@ -1,6 +1,6 @@
 from sentence_transformers import CrossEncoder
 
-from search_result_dataclass import SearchResult
+from pydantic_dataclasses import SearchResult
 
 class ReRanker:
     def __init__(

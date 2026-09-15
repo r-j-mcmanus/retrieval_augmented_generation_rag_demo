@@ -5,10 +5,8 @@ from typing import Any, LiteralString
 import threading
 import re
 
-from extractors.base import ExtractedChunk
 from .base import MetadataStoreInterface
-from search_result_dataclass import SearchResult
-from pydantic_dataclasses import QueryRequest, DocumentFilter
+from pydantic_dataclasses import QueryRequest, DocumentFilter, SearchResult, ExtractedChunk
 
 
 class SQLiteMetadataStore(MetadataStoreInterface):

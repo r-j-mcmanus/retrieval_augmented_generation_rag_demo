@@ -1,5 +1,7 @@
 from abc import ABC, abstractmethod
 
+from pydantic_dataclasses import LLMResponse
+
 
 class LLMCallerInterface(ABC):
     """Interface for interacting with LLMs."""
@@ -9,5 +11,5 @@ class LLMCallerInterface(ABC):
         """Init method for a realised instance"""
 
     @abstractmethod
-    def call(self, prompt: str) -> str:
+    def call(self, prompt: str) -> LLMResponse:
         """Hand the prompt to the LLM and return the response."""

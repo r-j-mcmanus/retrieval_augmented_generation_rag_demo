@@ -2,10 +2,8 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Any
 
-from extractors.base import ExtractedChunk
-from search_result_dataclass import SearchResult
 
-from pydantic_dataclasses import QueryRequest, DocumentFilter
+from pydantic_dataclasses import QueryRequest, DocumentFilter, SearchResult, ExtractedChunk
 
 class VectorStoreInterface(ABC):
     """Vector index backend for similarity search."""

@@ -3,6 +3,7 @@ import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer, pipeline
 
 from .base import LLMCallerInterface
+from pydantic_dataclasses import TokenUsage, LLMResponse
 
 # basically stolen straight from the HF example
 
@@ -11,6 +12,7 @@ class HFModels:
     Qwen_2_5__0_5B = "Qwen/Qwen2.5-0.5B-Instruct"
     Qwen_2_5__1_5B = "Qwen/Qwen2.5-1.5B-Instruct"
     Llama_3_2__3B = "meta-llama/Llama-3.2-3B-Instruct"
+
 
 class LocalQwenLLMCaller(LLMCallerInterface):
     """Using Hugging Face Transformers"""
@@ -48,7 +50,7 @@ class LocalQwenLLMCaller(LLMCallerInterface):
             tokenizer=self.tokenizer,
         )
 
-    def call(self, prompt: str, **kwargs) -> str:
+    def call(self, prompt: str, **kwargs) -> LLMResponse:
         # Format input using model's chat template
         messages = [
             {"role": "system", "content": "You are a helpful assistant."},
@@ -72,4 +74,9 @@ class LocalQwenLLMCaller(LLMCallerInterface):
         generated_text = outputs[0]["generated_text"]
         response = generated_text[len(formatted_prompt):].strip()
 
-        return response
+        usage = TokenUsage(
+            prompt_tokens=len(self.tokenizer.encode(formatted_prompt)),
+            completion_tokens=len(self.tokenizer.encode(response, add_special_tokens=False)),
+        )
+
+        return LLMResponse(response=response, token_usage=usage)

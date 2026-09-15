@@ -1,5 +1,4 @@
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 from datetime import datetime
@@ -7,15 +6,7 @@ from datetime import datetime
 import win32security
 import chonkie
 
-
-@dataclass
-class ExtractedChunk:
-    """Contains a row of data for a text chunk"""
-    content: str
-    locator: dict[str, Any] = field(default_factory=dict)
-    entity_id: int | None = None
-    source_type: str = ""
-    metadata: dict[str, Any] = field(default_factory=dict)
+from pydantic_dataclasses import ExtractedChunk
 
 
 class BaseDocumentExtractor(ABC):

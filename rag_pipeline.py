@@ -1,19 +1,21 @@
 from pathlib import Path
 from typing import Any
+from dataclasses import dataclass
 
 from extractors import BaseDocumentExtractor
 from storage import MetadataStoreInterface, VectorStoreInterface
 from embedding import EmbeddingServiceInterface
 from llm_caller import LLMCallerInterface
-from search_result_dataclass import SearchResult
 from prompt_router import IntentRouter, IntentPath
 from reranking import ReRanker
 from text_preprocessing import TextPreprocessor
+from knowledge_graph import KnowledgeGraph
 
-from pydantic_dataclasses import QueryRequest, DocumentFilter
+from pydantic_dataclasses import QueryRequest, SearchResult, TokenUsage, LLMResponse, ExtractedChunk
 from search_scope_strategy import strategy_selector
 
 # https://www.reddit.com/r/Rag/comments/1rf7xf6/whats_your_experience_with_hybrid_retrieval/
+
 
 class RAGPipeline:
     def __init__(
@@ -25,7 +27,8 @@ class RAGPipeline:
         llm_caller: LLMCallerInterface,
         query_router: IntentRouter,
         re_ranker: ReRanker,
-        preprocessor: TextPreprocessor
+        preprocessor: TextPreprocessor,
+        knowledge_graph: KnowledgeGraph
     ):
         self.extractors = {extractor.source_type.lower(): extractor for extractor in extractors}
         self.encoder = encoder
@@ -35,6 +38,7 @@ class RAGPipeline:
         self.query_router = query_router
         self.re_ranker = re_ranker
         self.preprocessor = preprocessor
+        self.knowledge_graph = knowledge_graph
 
     def _get_extractor_for_file(self, file_path: str | Path) -> BaseDocumentExtractor:
         suffix = Path(file_path).suffix.lower().lstrip(".")
@@ -52,6 +56,10 @@ class RAGPipeline:
 
         for chunk in chunks:
             chunk.metadata = useful_metadata
+
+        self.knowledge_graph.add_document(chunks, self.llm_caller)
+
+        raise Exception
         
         chunk_ids = self.metadata_store.insert_document(
             file_path=file_path,
@@ -182,21 +190,18 @@ class RAGPipeline:
                 }
             }
 
-        context_answers = []
+        context_answers: list[LLMResponse] = []
         for context in context_list: # TODO move into async loop
-            context_answers.append(self._get_single_context_response(context, user_query, paths))
+            llm_response = self._get_single_context_response(context, user_query, paths)
+            context_answers.append(llm_response)
 
         match_data = [
             {
-                'source': m.file_name, 
-                'context': m.context, 
-                'score': m.score, 
-                'locator': m.locator, 
-                'metadata': m.metadata, 
-                'context_response': a
+                'match': match,
+                'context_response': llm_response
             } 
-            for m , a in zip(matches, context_answers)
-            if 'not relevant' not in a.lower()
+            for match , llm_response in zip(matches, context_answers)
+            if 'not relevant' not in llm_response.response.lower()
         ]
         
         final_response = self._get_final_response(user_query, match_data)
@@ -211,7 +216,7 @@ class RAGPipeline:
             }
         }
 
-    def _get_single_context_response(self, context: str, user_query: str, paths: list[IntentPath]) -> str:
+    def _get_single_context_response(self, context: str, user_query: str, paths: list[IntentPath]) -> LLMResponse:
         answers = []
         for p in paths:
             answer = p.evaluate_chunk(user_query, context, self.llm_caller)
@@ -232,14 +237,14 @@ class RAGPipeline:
         response = self.llm_caller.call(prompt)
         return response
     
-    def _get_final_response(self, user_query: str, match_data: list[dict[str, str]]) -> str:
+    def _get_final_response(self, user_query: str, match_data: list[dict[str, Any]]) -> LLMResponse:
         
         final_context = ''
-        for match in match_data:
-            final_context = final_context + f'\n {match['source']}: \"{match['context_response']}\".' 
+        for m in match_data:
+            final_context = final_context + f'\n {m['match'].file_name}: \"{m['context_response'].response}\".' 
 
         if not final_context:
-            return 'No relevant sources.'
+            return LLMResponse(response='No relevant sources.', token_usage=TokenUsage(prompt_tokens=0,completion_tokens=0))
 
         prompt = f"""
             You are a RAG system for a private wealth management company.

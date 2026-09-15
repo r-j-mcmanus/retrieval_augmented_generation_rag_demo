@@ -1,7 +1,3 @@
-import os
-os.environ["HF_HUB_OFFLINE"] = "1"
-os.environ["TRANSFORMERS_OFFLINE"] = "1"
-
 from rag_pipeline import RAGPipeline
 from extractors import BaseDocumentExtractor, PDFExtractor, VTTExtractor, MP3Extractor, HTMLExtractor, TXTExtractor, EMLExtractor
 from storage import SQLiteMetadataStore, UsearchVectorStore
@@ -10,6 +6,7 @@ from llm_caller import LocalQwenLLMCaller, HFModels
 from prompt_router import IntentRouter, ComparisonPath, NumericalPath, ListPath
 from reranking import ReRanker
 from text_preprocessing import TextPreprocessor
+from knowledge_graph import KnowledgeGraph
 
 # hf files in ~/.cache/huggingface/hub
 
@@ -37,6 +34,7 @@ def make_pipeline() -> RAGPipeline:
     extractors = _make_extractors()
     router = _make_query_router()
     embedding_service = BGEEmbeddingService()
+    knowledge_graph = KnowledgeGraph()
 
     sql_store = SQLiteMetadataStore("_database/rag_vectors.db")
     vector_store = UsearchVectorStore("_database/vector_index.usearch", embedding_dim=embedding_service.embedding_dim)
@@ -54,7 +52,8 @@ def make_pipeline() -> RAGPipeline:
         llm_caller=llm_caller,
         query_router=router,
         re_ranker=re_ranker,
-        preprocessor=preprocessor
+        preprocessor=preprocessor,
+        knowledge_graph=knowledge_graph
     )
 
     return pipeline

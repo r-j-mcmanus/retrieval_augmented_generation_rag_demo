@@ -5,7 +5,7 @@ from usearch.index import Index
 import numpy as np
 
 from .base import VectorStoreInterface
-from search_result_dataclass import SearchResult
+from pydantic_dataclasses import SearchResult
 
 
 class UsearchVectorStore(VectorStoreInterface):
