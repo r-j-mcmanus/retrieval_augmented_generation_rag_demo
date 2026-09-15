@@ -25,12 +25,12 @@ def index_data(pipeline: RAGPipeline):
     # probably best to make a queue trigger that can process files in blob storage as prompted by the queue
     #pipeline.index_file(r'_data/vtt/example_video_1.vtt', client_reference=None)
     #pipeline.index_file(r'_data/vtt/example_video_2.vtt', client_reference=None)
-    #pipeline.index_file(r'_data/vtt/example_video_3.vtt', client_reference=123) # Mr Smith
-    #pipeline.index_file(r'_data/vtt/example_video_4.vtt', client_reference=456) # Ms Rose
+    pipeline.index_file(r'_data/vtt/example_video_3.vtt', client_reference=123) # Mr Smith
+    pipeline.index_file(r'_data/vtt/example_video_4.vtt', client_reference=456) # Ms Rose
     #pipeline.index_file(r'_data/pdf/example_pdf_1.pdf', client_reference=None)
-    #pipeline.index_file(r'_data/mp3/example_mp3_1.mp3', client_reference=789) # Mr Bean
-    #pipeline.index_file(r'_data/txt/example_txt_1.txt', client_reference=654) # Miss Jones
-    #pipeline.index_file(r'_data/eml/example_email_1.eml', client_reference=876) # Mr Thor
+    pipeline.index_file(r'_data/mp3/example_mp3_1.mp3', client_reference=789) # Mr Bean
+    pipeline.index_file(r'_data/txt/example_txt_1.txt', client_reference=654) # Miss Jones
+    pipeline.index_file(r'_data/eml/example_email_1.eml', client_reference=876) # Mr Thor
 
 def answer(query: str, client_ref: int | None, scope: DocumentScope, pipeline: RAGPipeline):
     query_request = QueryRequest(

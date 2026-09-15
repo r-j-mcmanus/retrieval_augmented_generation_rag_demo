@@ -33,6 +33,20 @@ class BaseDocumentExtractor(ABC):
     def get_useful_metadata(self, file_path: str | Path) -> dict[str, Any]:
         """Return metadata that is useful for this file type."""
 
+    def extract_document(
+        self,
+        file_path: str | Path,
+        additional_metadata: dict[str, Any] | None = None,
+    ) -> tuple[list[ExtractedChunk], dict[str, Any]]:
+        """Extract chunks and preserve both document and chunk metadata."""
+        chunks = self.extract(file_path)
+        document_metadata = self.get_useful_metadata(file_path) | (additional_metadata or {})
+
+        for chunk in chunks:
+            chunk.metadata = document_metadata | chunk.metadata
+
+        return chunks, document_metadata
+
     def _get_created_at(self, file_path: Path) -> str:
         return datetime.fromtimestamp(file_path.stat().st_mtime).isoformat()
     

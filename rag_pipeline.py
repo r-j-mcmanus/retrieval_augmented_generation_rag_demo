@@ -16,6 +16,7 @@ from search_scope_strategy import strategy_selector
 
 # https://www.reddit.com/r/Rag/comments/1rf7xf6/whats_your_experience_with_hybrid_retrieval/
 
+# TODO would be good to fine tune a model for this!
 
 class RAGPipeline:
     def __init__(
@@ -50,17 +51,15 @@ class RAGPipeline:
     def index_file(self, file_path: str | Path, client_reference: int | None):
         file_path = Path(file_path)
         extractor = self._get_extractor_for_file(file_path)
-        chunks = extractor.extract(file_path)
-        useful_metadata = extractor.get_useful_metadata(file_path)
-        useful_metadata['encoder'] = self.encoder.name
-
-        for chunk in chunks:
-            chunk.metadata = useful_metadata
+        chunks, useful_metadata = extractor.extract_document(
+            file_path,
+            additional_metadata={"encoder": self.encoder.name},
+        )
 
         self.knowledge_graph.add_document(chunks, self.llm_caller)
 
-        raise Exception
-        
+        return
+
         chunk_ids = self.metadata_store.insert_document(
             file_path=file_path,
             source_type=extractor.source_type,

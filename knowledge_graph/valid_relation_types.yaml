@@ -1,20 +1,11 @@
 # Client / people
 - MEMBER_OF
 - RELATED_TO
-- ADVISED_BY
-- SERVED_BY
 
-# Client needs
-- HAS_NEED
-- HAS_OBJECTIVE
-- HAS_PREFERENCE
-- HAS_COMPLAINT
+# Desire
+- NEED
+- COMPLAINT
 
 # Financial
-- OWNS
 - HOLDS
 - LIABLE_FOR
-
-# Advice / decisions
-- RECOMMENDS
-- ADDRESSES

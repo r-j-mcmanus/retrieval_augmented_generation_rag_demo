@@ -65,7 +65,7 @@ class LocalQwenLLMCaller(LLMCallerInterface):
 
         outputs = self.pipe(
             formatted_prompt,
-            max_new_tokens=kwargs.get("max_new_tokens", self.max_new_tokens),
+            # max_new_tokens=kwargs.get("max_new_tokens", self.max_new_tokens),
             temperature=kwargs.get("temperature", self.temperature),
             do_sample=True if self.temperature > 0 else False,
             pad_token_id=self.tokenizer.eos_token_id,
