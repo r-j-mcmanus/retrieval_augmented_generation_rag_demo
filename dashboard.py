@@ -1,4 +1,5 @@
 from pathlib import Path
+import time
 import requests
 
 import streamlit as st
@@ -30,6 +31,7 @@ def answer_query(query: str, scope_selection: str | int | None):
 	else:
 		raise ValueError(f'Invalid scope {scope_selection}')
 
+	started_at = time.perf_counter()
 	response = requests.post(
 		"http://127.0.0.1:8000/query",
 		json=QueryRequest(
@@ -39,7 +41,27 @@ def answer_query(query: str, scope_selection: str | int | None):
 		).model_dump(),
 	)
 	response.raise_for_status()
-	return response.json()
+	result = response.json()
+	result["response_time_seconds"] = time.perf_counter() - started_at
+	return result
+
+
+def get_token_usage(result: dict) -> tuple[int, int]:
+	"""Return prompt and completion tokens used by the complete query."""
+	prompt_tokens = 0
+	completion_tokens = 0
+
+	responses = [result.get("response", {})]
+	responses.extend(
+		match_data.get("context_response", {})
+		for match_data in result.get("matches", [])
+	)
+	for response in responses:
+		usage = response.get("token_usage", {}) if isinstance(response, dict) else {}
+		prompt_tokens += usage.get("prompt_tokens", 0)
+		completion_tokens += usage.get("completion_tokens", 0)
+
+	return prompt_tokens, completion_tokens
 
 
 # -----------------------------------------
@@ -100,11 +122,27 @@ if submitted and query.strip():
 result = st.session_state.get("query_result")
 if result:
 	st.subheader("Answer")
-	st.markdown(result["response"])
+	final_response = result["response"]
+	st.markdown(
+		final_response.get("response", "")
+		if isinstance(final_response, dict)
+		else final_response
+	)
+
+	prompt_tokens, completion_tokens = get_token_usage(result)
+	st.subheader("Token usage")
+	usage_columns = st.columns(4)
+	usage_columns[0].metric("Total tokens", prompt_tokens + completion_tokens)
+	usage_columns[1].metric("Prompt tokens", prompt_tokens)
+	usage_columns[2].metric("Completion tokens", completion_tokens)
+	usage_columns[3].metric("Response time", f"{result['response_time_seconds']:.2f} s")
 	
 	st.subheader("Citations")
-	for i, match in enumerate(result["matches"], 1):
+	for i, match_data in enumerate(result["matches"], 1):
+		match = match_data["match"]
 		score = 1 - match["score"]
-		with st.expander(f"{i}. {match['source']} — relevance: {score:.3f}"):
+		with st.expander(f"{i}. {match['file_name']} — relevance: {score:.3f}"):
 			st.markdown("**Context**")
-			st.markdown('...' + match["context"] + '...')
+			st.markdown(match["context"])
+			st.markdown("**Extracted answer**")
+			st.markdown(match_data["context_response"]["response"])

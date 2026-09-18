@@ -1,6 +1,8 @@
 chonkie
 chonkie[model2vec]
 streamlit
+requests
+PyYAML
 pydantic
 fastapi
 sqlite3

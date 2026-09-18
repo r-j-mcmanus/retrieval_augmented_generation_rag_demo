@@ -74,6 +74,7 @@ class LLMResponse(BaseModel):
 
 
 from dataclasses import dataclass, field
+from pydantic.dataclasses import dataclass as pydantic_dataclass
 
 @dataclass
 class SearchResult:
@@ -104,6 +105,27 @@ class SearchResult:
         self.doc_id = other.doc_id if not self.doc_id else self.doc_id
 
         return self
+
+
+@pydantic_dataclass
+class MatchData:
+    match: SearchResult
+    context_response: LLMResponse
+
+
+@pydantic_dataclass
+class QueryIntents:
+    result: list[str]
+    answer: str
+
+
+@pydantic_dataclass
+class QueryResponse:
+    query: str
+    cleaned_query: str
+    matches: list[MatchData]
+    response: LLMResponse
+    intents: QueryIntents
 
 
 

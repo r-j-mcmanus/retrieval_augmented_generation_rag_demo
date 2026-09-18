@@ -14,7 +14,7 @@ class HFModels:
     Llama_3_2__3B = "meta-llama/Llama-3.2-3B-Instruct"
 
 
-MODEL = HFModels.Qwen_2_5__3B
+MODEL = HFModels.Qwen_2_5__1_5B
 
 
 class LocalQwenLLMCaller(LLMCallerInterface):

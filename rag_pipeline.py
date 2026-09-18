@@ -11,7 +11,15 @@ from reranking import ReRanker
 from text_preprocessing import TextPreprocessor
 from knowledge_graph import KnowledgeGraph
 
-from pydantic_dataclasses import QueryRequest, SearchResult, TokenUsage, LLMResponse, ExtractedChunk
+from pydantic_dataclasses import (
+    LLMResponse,
+    MatchData,
+    QueryIntents,
+    QueryRequest,
+    QueryResponse,
+    SearchResult,
+    TokenUsage,
+)
 from search_scope_strategy import strategy_selector
 
 # https://www.reddit.com/r/Rag/comments/1rf7xf6/whats_your_experience_with_hybrid_retrieval/
@@ -181,7 +189,7 @@ class RAGPipeline:
         self,
         query_request: QueryRequest,
         top_k: int = 10,
-    ) -> dict[str, Any]:
+    ) -> QueryResponse:
         # TODO real validation, probably before pipeline
         assert isinstance(query_request, QueryRequest)
 
@@ -196,16 +204,19 @@ class RAGPipeline:
         
         # if there is no data we can retrieve relevant to the query
         if not matches:
-            return {
-                "query": user_query,
-                "cleaned_query": query_request.query,
-                "matches": [],
-                "response": 'No relevant context',
-                "intents": {
-                    'result': [p.intent.name for p in paths],
-                    'answer': answer
-                }
-            }
+            return QueryResponse(
+                query=user_query,
+                cleaned_query=query_request.query,
+                matches=[],
+                response=LLMResponse(
+                    response="No relevant context",
+                    token_usage=TokenUsage(prompt_tokens=0, completion_tokens=0),
+                ),
+                intents=QueryIntents(
+                    result=[p.intent.name for p in paths],
+                    answer=answer,
+                ),
+            )
 
         context_answers: list[LLMResponse] = []
         for context in context_list: # TODO move into async loop
@@ -213,25 +224,23 @@ class RAGPipeline:
             context_answers.append(llm_response)
 
         match_data = [
-            {
-                'match': match,
-                'context_response': llm_response
-            } 
+            MatchData(match=match, context_response=llm_response)
             for match , llm_response in zip(matches, context_answers)
             if 'not relevant' not in llm_response.response.lower()
         ]
         
         final_response = self._get_final_response(user_query, match_data)
 
-        return {
-            "query": user_query,
-            "matches": match_data,
-            "response": final_response,
-            "intents": {
-                'result': [p.intent.name for p in paths],
-                'answer': answer
-            }
-        }
+        return QueryResponse(
+            query=user_query,
+            cleaned_query=query_request.query,
+            matches=match_data,
+            response=final_response,
+            intents=QueryIntents(
+                result=[p.intent.name for p in paths],
+                answer=answer,
+            ),
+        )
 
     def _get_single_context_response(self, context: str, user_query: str, paths: list[IntentPath]) -> LLMResponse:
         answers = []
@@ -254,11 +263,11 @@ class RAGPipeline:
         response = self.call_llm(prompt)
         return response
     
-    def _get_final_response(self, user_query: str, match_data: list[dict[str, Any]]) -> LLMResponse:
+    def _get_final_response(self, user_query: str, match_data: list[MatchData]) -> LLMResponse:
         
         final_context = ''
         for m in match_data:
-            final_context = final_context + f'\n {m['match'].file_name}: \"{m['context_response'].response}\".' 
+            final_context = final_context + f'\n {m.match.file_name}: \"{m.context_response.response}\".'
 
         if not final_context:
             return LLMResponse(response='No relevant sources.', token_usage=TokenUsage(prompt_tokens=0,completion_tokens=0))
