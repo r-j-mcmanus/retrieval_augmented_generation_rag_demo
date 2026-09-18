@@ -80,6 +80,7 @@ key_to_name: dict[int, str]= {
 	654: 'Miss Jones',
 	789: 'Mr Bean',
 	876: 'Mr Thor',
+	1001: 'Dr Amelia Jones'
 }
 
 st.subheader("Query")

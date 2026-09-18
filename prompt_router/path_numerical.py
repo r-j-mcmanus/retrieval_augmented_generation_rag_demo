@@ -15,10 +15,10 @@ class NumericalPath(IntentPath):
         self,
         query: str,
         context: str,
-        llm: LLMCallerInterface
+        call
     ) -> str:
 
-        result = llm.call(
+        result = call(
             f"""
             You are extracting numerical evidence from a business document.
 

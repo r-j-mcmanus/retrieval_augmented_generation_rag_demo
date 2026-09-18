@@ -24,7 +24,7 @@ class IntentPath(ABC):
         self,
         query: str,
         context: str,
-        llm: LLMCallerInterface
+        call
     ) -> str:
         """Evaluate a retrieved chunk against the query."""
         raise NotImplementedError

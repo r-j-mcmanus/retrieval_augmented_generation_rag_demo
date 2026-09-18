@@ -15,10 +15,10 @@ class GenericPath(IntentPath):
         self,
         query: str,
         context: str,
-        llm: LLMCallerInterface
+        call
     ) -> str:
 
-        result = llm.call(
+        result = call(
             f"""You are analysing a contextual snippet from a business document to answer a query.
             Context Snippet:
             {context}

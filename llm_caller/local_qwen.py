@@ -14,12 +14,15 @@ class HFModels:
     Llama_3_2__3B = "meta-llama/Llama-3.2-3B-Instruct"
 
 
+MODEL = HFModels.Qwen_2_5__3B
+
+
 class LocalQwenLLMCaller(LLMCallerInterface):
     """Using Hugging Face Transformers"""
 
     def __init__(
         self,
-        model_name: str = HFModels.Qwen_2_5__0_5B,
+        model_name: str = MODEL,
         max_new_tokens: int = 512,
         temperature: float = 0.05
     ):
@@ -65,7 +68,6 @@ class LocalQwenLLMCaller(LLMCallerInterface):
 
         outputs = self.pipe(
             formatted_prompt,
-            # max_new_tokens=kwargs.get("max_new_tokens", self.max_new_tokens),
             temperature=kwargs.get("temperature", self.temperature),
             do_sample=True if self.temperature > 0 else False,
             pad_token_id=self.tokenizer.eos_token_id,

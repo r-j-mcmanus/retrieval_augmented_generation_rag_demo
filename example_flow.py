@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from rag_pipeline import RAGPipeline
 from make_rag_pipeline import make_pipeline
 from pydantic_dataclasses import QueryRequest
@@ -23,14 +25,21 @@ from pydantic_dataclasses import DocumentScope
 def index_data(pipeline: RAGPipeline):
     pass
     # probably best to make a queue trigger that can process files in blob storage as prompted by the queue
-    #pipeline.index_file(r'_data/vtt/example_video_1.vtt', client_reference=None)
-    #pipeline.index_file(r'_data/vtt/example_video_2.vtt', client_reference=None)
-    pipeline.index_file(r'_data/vtt/example_video_3.vtt', client_reference=123) # Mr Smith
-    pipeline.index_file(r'_data/vtt/example_video_4.vtt', client_reference=456) # Ms Rose
-    #pipeline.index_file(r'_data/pdf/example_pdf_1.pdf', client_reference=None)
     pipeline.index_file(r'_data/mp3/example_mp3_1.mp3', client_reference=789) # Mr Bean
     pipeline.index_file(r'_data/txt/example_txt_1.txt', client_reference=654) # Miss Jones
     pipeline.index_file(r'_data/eml/example_email_1.eml', client_reference=876) # Mr Thor
+    for file in Path("_data/dr_amelia_jones").rglob("*"):
+        if file.is_file():
+            pipeline.index_file(file, client_reference=1001)
+    for file in Path("_data/mr_smith").rglob("*"):
+        if file.is_file():
+            pipeline.index_file(file, client_reference=123)
+    for file in Path("_data/ms_rose").rglob("*"):
+        if file.is_file():
+            pipeline.index_file(file, client_reference=456)
+    for file in Path("_data/internal").rglob("*"):
+            if file.is_file():
+                pipeline.index_file(file, client_reference=None)
 
 def answer(query: str, client_ref: int | None, scope: DocumentScope, pipeline: RAGPipeline):
     query_request = QueryRequest(
@@ -43,7 +52,7 @@ def answer(query: str, client_ref: int | None, scope: DocumentScope, pipeline: R
 
 _pipeline = make_pipeline()
 
-index_data(_pipeline)
+# index_data(_pipeline)
 
 # answer('list unhappy clients', pipeline)
 # answer('tell me about mr bean\'s mortgage', pipeline)

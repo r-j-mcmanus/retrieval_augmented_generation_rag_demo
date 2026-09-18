@@ -15,10 +15,10 @@ class ListPath(IntentPath):
         self,
         query: str,
         context: str,
-        llm: LLMCallerInterface
+        call
     ) -> str:
 
-        result = llm.call(
+        result = call(
             f"""
             You are creating a list of relevant information from business documents.
             Below is a single extract of many to evaluate.

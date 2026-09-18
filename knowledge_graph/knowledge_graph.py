@@ -10,7 +10,8 @@ from pydantic_dataclasses import ExtractedChunk
 
 from pydantic import BaseModel, ConfigDict, ValidationError
 
-class _Connection(BaseModel):
+class _Connection(BaseModel): 
+    """Raw data extracted from document"""
     model_config = ConfigDict(
         extra="forbid",
         str_strip_whitespace=True,
@@ -22,11 +23,26 @@ class _Connection(BaseModel):
     target_type: str
     relationship: str
 
+class Vertex(BaseModel):
+    type: str
+    name: str
+
+class Edge(BaseModel):
+    source: str
+    target: str
+    relation: str
+    # confidence: float
+    # relational_chunk_id: int
+    # document: str
+    # document_id: int 
+
 
 class KnowledgeGraph:
     def __init__(self):
         self.vertex_types: set[str] = set()
-        self.edge_relations: set[str]  = set()
+        self.edge_types: set[str]  = set()
+        self.edges: dict[tuple[str, str], Edge] = dict()
+        self.vertexes: dict[str, Vertex] = dict()
         self._load_graph_schema()
 
     def _load_graph_schema(self):
@@ -34,7 +50,7 @@ class KnowledgeGraph:
         if not relation_path.exists():
             raise Exception(f'Expected {relation_path}')
         with relation_path.open("r", encoding="utf-8") as f: 
-            self.edge_relations = set(yaml.safe_load(f))
+            self.edge_types = set(yaml.safe_load(f))
 
         vertex_path = Path('knowledge_graph/valid_vertex_types.yaml')
         if not vertex_path.exists():
@@ -48,18 +64,38 @@ class KnowledgeGraph:
     def _make_relationships(self):
         pass
 
+    def _add_to_graph(self, connections: list[_Connection]):
+        for c in connections:
+            if c.source not in self.vertexes:
+                self.vertexes[c.source] = Vertex(
+                    name = c.source,
+                    type = c.source_type
+                )
+            if c.target not in self.vertexes:
+                self.vertexes[c.target] = Vertex(
+                    name = c.target,
+                    type = c.target_type
+                )
+            if (c.source, c.target) not in self.edges:
+                self.edges[(c.source, c.target)] = Edge(
+                    source = c.source,
+                    target = c.target,
+                    relation = c.relationship
+                )
+
     def add_document(self, chunks: list[ExtractedChunk], llm: LLMCallerInterface):
         connections = self._extract_connections_from_chunks(chunks, llm)
-        connections = self._validate_connections(connections)
+        connections, dirty_connections = self._validate_connections(connections)
+        self._add_to_graph(connections)
 
     def _validate_connections(
         self,
         connections: Iterable[Mapping[str, Any]],
-    ) -> list[_Connection]:
+    ) -> tuple[list[_Connection], list[_Connection]]:
         cleaned_connections: list[_Connection] = []
         dirty_connections = []
         valid_vertex_types = self.vertex_types
-        valid_edge_relations = self.edge_relations
+        valid_edge_relations = self.edge_types
 
         for candidate in connections:
             try:
@@ -78,7 +114,7 @@ class KnowledgeGraph:
 
             cleaned_connections.append(valid_connection)
                 
-        return cleaned_connections
+        return cleaned_connections, dirty_connections
 
     def _extract_connections_from_chunks(self, chunks: list[ExtractedChunk], llm: LLMCallerInterface):
         prompt = self._create_prompt()
@@ -105,7 +141,7 @@ class KnowledgeGraph:
             f'The "entity type" must be from the following list: {self.vertex_types}.',
 
             'The "relationship type" relate to the extracted head entity identified by the "name of entity"',
-            f'The "relationship type" must be from the following list: {self.edge_relations}.',
+            f'The "relationship type" must be from the following list: {self.edge_types}.',
             '\n',
             'Here is an example:', # This is known as one-shot training
             '"John Doe works for Apple, and his son is Ben Doe"',
@@ -122,29 +158,40 @@ class KnowledgeGraph:
         prompt = "\n".join(base_string_parts)
 
         return prompt
-
-    def _extract_jsons_from_text(self, text: str):
+    
+    def _extract_jsons_from_text(self, text: str) -> list[dict]:
         extracted_jsons: list[dict] = []
         i = 0
-        while i < len(text):
-            if text[i] != '{':
-                i += 1
-                continue
+        n = len(text)
+        
+        while i < n:
+            i = text.find('{', i)# Jump directly to the next '{'
+            if i == -1:
+                break
 
             depth = 1
-            for j in range(i+1, len(text)):
-                if text[j] == '{':
+            found_match = False
+            
+            for j in range(i + 1, n):
+                char = text[j]
+                if char == '{':
                     depth += 1
-                if text[j] == '}':
+                elif char == '}':
                     depth -= 1
-                if depth == 0:
-                    json_string = text[i:j+1]
-                    try:
-                        json = orjson.loads(json_string)
-                        extracted_jsons.append(json)
-                    except Exception as e:
-                        print(f'Cannot parse {json_string}: {e}')
-                    i = j + 1
-                    break
+                    if depth == 0:
+                        json_str = text[i:j + 1]
+                        try:
+                            json_dict = orjson.loads(json_str)
+                            extracted_jsons.append(json_dict)
+                        except Exception as e:
+                            print('Invalid json string: {json_str}')
+                        i = j + 1
+                        found_match = True
+                        break
+            
+            # If no closing } then end the search
+            if not found_match:
+                break
+
         return extracted_jsons
-    
+        

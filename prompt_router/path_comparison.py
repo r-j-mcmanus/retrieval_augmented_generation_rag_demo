@@ -15,10 +15,10 @@ class ComparisonPath(IntentPath):
         self,
         query: str,
         context: str,
-        llm: LLMCallerInterface
+        call
     ) -> str:
 
-        result = llm.call(
+        result = call(
             f"""
             Evaluate this context as evidence for a comparison query.
 

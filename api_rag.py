@@ -3,7 +3,7 @@ from fastapi import FastAPI
 from pydantic_dataclasses import QueryRequest
 from make_rag_pipeline import make_pipeline
 
-# run with uvicorn api:app --reload
+# run with uvicorn rag_api:app --reload
 
 PIPELINE = make_pipeline()
 

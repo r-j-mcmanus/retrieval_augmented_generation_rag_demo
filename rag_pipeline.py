@@ -1,11 +1,11 @@
 from pathlib import Path
 from typing import Any
-from dataclasses import dataclass
+import os
+import requests
 
 from extractors import BaseDocumentExtractor
 from storage import MetadataStoreInterface, VectorStoreInterface
 from embedding import EmbeddingServiceInterface
-from llm_caller import LLMCallerInterface
 from prompt_router import IntentRouter, IntentPath
 from reranking import ReRanker
 from text_preprocessing import TextPreprocessor
@@ -18,6 +18,9 @@ from search_scope_strategy import strategy_selector
 
 # TODO would be good to fine tune a model for this!
 
+LLM_API_URL = os.getenv("LLM_API_URL", "http://127.0.0.1:8001")
+
+
 class RAGPipeline:
     def __init__(
         self,
@@ -25,21 +28,36 @@ class RAGPipeline:
         metadata_store: MetadataStoreInterface,
         vector_store: VectorStoreInterface,
         encoder: EmbeddingServiceInterface,
-        llm_caller: LLMCallerInterface,
         query_router: IntentRouter,
         re_ranker: ReRanker,
         preprocessor: TextPreprocessor,
-        knowledge_graph: KnowledgeGraph
+        knowledge_graph: KnowledgeGraph,
+        llm_url: str = LLM_API_URL,
     ):
-        self.extractors = {extractor.source_type.lower(): extractor for extractor in extractors}
+        # ensure only valid extractors
+        self.extractors: dict[str, BaseDocumentExtractor] = {}
+        for extractor in extractors:
+            if extractor.source_type.lower() in self.extractors:
+                raise ValueError(f'Same source_type in two extractors: {extractor.source_type}')
+            self.extractors[extractor.source_type.lower()] =  extractor
+
         self.encoder = encoder
         self.metadata_store = metadata_store
         self.vector_store = vector_store
-        self.llm_caller = llm_caller
         self.query_router = query_router
         self.re_ranker = re_ranker
         self.preprocessor = preprocessor
         self.knowledge_graph = knowledge_graph
+        self.llm_url = llm_url.rstrip("/")
+
+    def call_llm(self, prompt: str) -> LLMResponse:
+        llm_response = requests.post(
+            f"{self.llm_url}/generate",
+            json={"query": prompt},
+            timeout=300,
+        )
+        llm_response.raise_for_status()
+        return LLMResponse.model_validate(llm_response.json())
 
     def _get_extractor_for_file(self, file_path: str | Path) -> BaseDocumentExtractor:
         suffix = Path(file_path).suffix.lower().lstrip(".")
@@ -56,9 +74,9 @@ class RAGPipeline:
             additional_metadata={"encoder": self.encoder.name},
         )
 
-        self.knowledge_graph.add_document(chunks, self.llm_caller)
-
-        return
+        # self.knowledge_graph.add_document(chunks)
+        # a=1
+        # return
 
         chunk_ids = self.metadata_store.insert_document(
             file_path=file_path,
@@ -218,7 +236,7 @@ class RAGPipeline:
     def _get_single_context_response(self, context: str, user_query: str, paths: list[IntentPath]) -> LLMResponse:
         answers = []
         for p in paths:
-            answer = p.evaluate_chunk(user_query, context, self.llm_caller)
+            answer = p.evaluate_chunk(user_query, context, lambda x: self.call_llm(x))
             answers.append((answer, p.intent.name))
             # Intents: {[p.intent.name for p in paths]}
 
@@ -233,7 +251,7 @@ class RAGPipeline:
             
             If there is no relevant information, respond with 'not relevant'
             """
-        response = self.llm_caller.call(prompt)
+        response = self.call_llm(prompt)
         return response
     
     def _get_final_response(self, user_query: str, match_data: list[dict[str, Any]]) -> LLMResponse:
@@ -261,6 +279,6 @@ class RAGPipeline:
             3. Maintain objective tone.
         """
 
-        response = self.llm_caller.call(prompt)
+        response = self.call_llm(prompt)
         return response
     

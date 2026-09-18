@@ -1,0 +1,3 @@
+streamlit run dashboard/rag_query.py
+uvicorn api_rag:app --host 127.0.0.1 --port 8000 --reload
+uvicorn api_llm:app --host 127.0.0.1 --port 8001
