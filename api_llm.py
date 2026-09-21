@@ -13,6 +13,8 @@ from llm_caller.local_qwen import LocalQwenLLMCaller
 LLM_CALLER: LLMCallerInterface | None  = None
 GENERATION_LOCK = Lock()
 
+# look at models in https://www.reddit.com/r/LocalLLaMA/comments/1wg28mu/is_there_a_better_small_model_than_qwen35_4b_for/
+
 
 class GenerateRequest(BaseModel):
 	query: str

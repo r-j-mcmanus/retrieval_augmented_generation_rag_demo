@@ -106,7 +106,7 @@ key_to_name: dict[int, str]= {
 }
 
 st.subheader("Query")
-options = [DocumentScope.ALL_CLIENTS.name, DocumentScope.INTERNAL.name] + list(key_to_name.keys())
+options = [DocumentScope.ALL_CLIENTS.value, DocumentScope.INTERNAL.value] + list(key_to_name.keys())
 scope_selection = st.selectbox("Client Reference", options=options)
 if isinstance(scope_selection, int):
 	st.caption(f"Client: {key_to_name[scope_selection]}")
@@ -116,7 +116,8 @@ with st.form("query_form"):
 	submitted = st.form_submit_button("Ask")
 
 if submitted and query.strip():
-	st.session_state["query_result"] = answer_query(query, scope_selection)
+	with st.spinner("Generating response...", show_time=True):
+		st.session_state["query_result"] = answer_query(query, scope_selection)
 	st.session_state["submitted_query"] = query
 
 result = st.session_state.get("query_result")
@@ -142,7 +143,17 @@ if result:
 		match = match_data["match"]
 		score = 1 - match["score"]
 		with st.expander(f"{i}. {match['file_name']} — relevance: {score:.3f}"):
-			st.markdown("**Context**")
-			st.markdown(match["context"])
-			st.markdown("**Extracted answer**")
-			st.markdown(match_data["context_response"]["response"])
+			with st.container(border=True):
+				st.markdown(
+					'<div style="background-color: grey; padding: 0.35rem 0.6rem; '
+					'border-radius: 0.25rem;"><strong>Context</strong></div>',
+					unsafe_allow_html=True,
+				)
+				st.markdown(match["context"])
+			with st.container(border=True):
+				st.markdown(
+					'<div style="background-color: grey; padding: 0.35rem 0.6rem; '
+					'border-radius: 0.25rem;"><strong>Extracted answer</strong></div>',
+					unsafe_allow_html=True,
+				)
+				st.markdown(match_data["context_response"]["response"])

@@ -4,7 +4,7 @@ import orjson
 from collections.abc import Iterable, Mapping
 from typing import Any
 
-from llm_caller import LLMCallerInterface
+
 
 from pydantic_dataclasses import ExtractedChunk
 
@@ -32,8 +32,6 @@ class Edge(BaseModel):
     target: str
     relation: str
     # confidence: float
-    # relational_chunk_id: int
-    # document: str
     # document_id: int 
 
 
@@ -83,10 +81,13 @@ class KnowledgeGraph:
                     relation = c.relationship
                 )
 
-    def add_document(self, chunks: list[ExtractedChunk], llm: LLMCallerInterface):
-        connections = self._extract_connections_from_chunks(chunks, llm)
-        connections, dirty_connections = self._validate_connections(connections)
-        self._add_to_graph(connections)
+    def add_document(self, chunks: list[ExtractedChunk], call):
+        # TODO try and clean dirty connections 
+        # TODO entity resolution 
+        for chunk in chunks:
+            connections = self._extract_connections_from_chunk(chunk, call)
+            connections, dirty_connections = self._validate_connections(connections)
+            self._add_to_graph(connections)
 
     def _validate_connections(
         self,
@@ -104,11 +105,13 @@ class KnowledgeGraph:
                 dirty_connections.append(candidate)
                 continue
 
-            if (
-                valid_connection.source_type not in valid_vertex_types
-                or valid_connection.target_type not in valid_vertex_types
-                or valid_connection.relationship not in valid_edge_relations
-            ):
+            if (valid_connection.source_type not in valid_vertex_types):
+                dirty_connections.append(candidate)
+                continue
+            if (valid_connection.target_type not in valid_vertex_types):
+                dirty_connections.append(candidate)
+                continue
+            if (valid_connection.relationship not in valid_edge_relations):
                 dirty_connections.append(candidate)
                 continue
 
@@ -116,32 +119,25 @@ class KnowledgeGraph:
                 
         return cleaned_connections, dirty_connections
 
-    def _extract_connections_from_chunks(self, chunks: list[ExtractedChunk], llm: LLMCallerInterface):
-        prompt = self._create_prompt()
-        all_extracted_jsons = []
-        for chunk in chunks:
-            result = llm.call(prompt + '\nThe following is the context:\n' + chunk.content)
-            response = result.response
-            try:
-                jsons = self._extract_jsons_from_text(response)
-                all_extracted_jsons.extend(jsons)
-            except:
-                print(result)
-        return all_extracted_jsons
+    def _extract_connections_from_chunk(self, chunk: ExtractedChunk, call) -> list[dict]:
+        pre_prompt, post_prompt = self._create_prompt()
+        result = call(pre_prompt + '\nThe following is the context:\n' + chunk.content + '\n' + post_prompt)
+        response = result.response
+        try:
+            return self._extract_jsons_from_text(response)
+        except Exception:
+            print(result)
+            return []
 
-    def _create_prompt(self) -> str:
-        base_string_parts: list[str] = [
-            'You are a state of the art algorithm designed for extracting information in structured formats to build a knowledge graph.',
-            'Your task is to identify the entities and relations requested with the user prompt from a given text.',
+    def _create_prompt(self) -> tuple[str, str]:
+        pre_parts: list[str] = [
+            'You are extracting information to build a knowledge graph.',
+            'Your task is to identify the entities and relations from the context provided.',
             'You must generate the output as a list of valid json objects.',
             'The JSON objects are of the form:',
             '{"source": "name of entity", "source_type": "entity type", "target": "name of entity", "target_type": "entity type", "relationship": "relationship type"}',
-
             'The "entity type" describes extracted head entity identified by the "name of entity"',
-            f'The "entity type" must be from the following list: {self.vertex_types}.',
-
             'The "relationship type" relate to the extracted head entity identified by the "name of entity"',
-            f'The "relationship type" must be from the following list: {self.edge_types}.',
             '\n',
             'Here is an example:', # This is known as one-shot training
             '"John Doe works for Apple, and his son is Ben Doe"',
@@ -150,14 +146,18 @@ class KnowledgeGraph:
             '{"source": "John Doe", "source_type": "Person", "target": "Ben Doe", "target_type": "Person", "relationship": "RELATED_TO"}]',
             '{"source": "Ben Doe", "source_type": "Person", "target": "John Doe", "target_type": "Person", "relationship": "RELATED_TO"}]',
             '\n',
-            'Do not return the example.',
-            'Be sceptical about relations and only return ones that will be of relevance to a wealth firm.',
             'Use ONLY the listed broad categories in "entity type" and "relationship type"',
             'Only return the list of Json objects.',
         ]
-        prompt = "\n".join(base_string_parts)
+        pre_prompt = "\n".join(pre_parts)
 
-        return prompt
+        post_parts = [
+            f'The "entity type" must ONLY be from the following list: {list(self.vertex_types)}.',
+            f'The "relationship type" must ONLY be from the following list: {list(self.edge_types)}.',
+        ]
+        post_prompt = "\n".join(post_parts)
+
+        return pre_prompt, post_prompt
     
     def _extract_jsons_from_text(self, text: str) -> list[dict]:
         extracted_jsons: list[dict] = []

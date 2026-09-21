@@ -3,6 +3,7 @@ from typing import Any
 
 from .base import BaseDocumentExtractor, ExtractedChunk
 
+# TODO if a table is in the MD file, try to not have it be broken up?
 
 class MDExtractor(BaseDocumentExtractor):
     def __init__(self):

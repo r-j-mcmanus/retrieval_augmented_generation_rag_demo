@@ -1,5 +1,4 @@
 from pathlib import Path
-from typing import Any
 import os
 import requests
 
@@ -82,9 +81,9 @@ class RAGPipeline:
             additional_metadata={"encoder": self.encoder.name},
         )
 
-        # self.knowledge_graph.add_document(chunks)
-        # a=1
-        # return
+        #self.knowledge_graph.add_document(chunks, self.call_llm)
+        a=1
+        raise Exception
 
         chunk_ids = self.metadata_store.insert_document(
             file_path=file_path,
@@ -245,7 +244,7 @@ class RAGPipeline:
     def _get_single_context_response(self, context: str, user_query: str, paths: list[IntentPath]) -> LLMResponse:
         answers = []
         for p in paths:
-            answer = p.evaluate_chunk(user_query, context, lambda x: self.call_llm(x))
+            answer = p.evaluate_chunk(user_query, context, self.call_llm)
             answers.append((answer, p.intent.name))
             # Intents: {[p.intent.name for p in paths]}
 
