@@ -7,7 +7,7 @@ class ReRanker:
         self,
         model_name: str = 'BAAI/bge-reranker-base',
         cache_folder: str = './_local_models',
-        device: str | None = None,
+        device: str | None = "cuda",
     ) -> None:
         self.model = CrossEncoder(
             model_name,

@@ -6,7 +6,7 @@ from typing import Any
 
 
 
-from pydantic_dataclasses import ExtractedChunk
+from pydantic_dataclasses import ExtractedChunk, GenerateRequest
 
 from pydantic import BaseModel, ConfigDict, ValidationError
 
@@ -120,8 +120,8 @@ class KnowledgeGraph:
         return cleaned_connections, dirty_connections
 
     def _extract_connections_from_chunk(self, chunk: ExtractedChunk, call) -> list[dict]:
-        pre_prompt, post_prompt = self._create_prompt()
-        result = call(pre_prompt + '\nThe following is the context:\n' + chunk.content + '\n' + post_prompt)
+        request = self._create_prompt(chunk.content)
+        result = call(request.query, request.system_prompt)
         response = result.response
         try:
             return self._extract_jsons_from_text(response)
@@ -129,35 +129,35 @@ class KnowledgeGraph:
             print(result)
             return []
 
-    def _create_prompt(self) -> tuple[str, str]:
-        pre_parts: list[str] = [
-            'You are extracting information to build a knowledge graph.',
-            'Your task is to identify the entities and relations from the context provided.',
-            'You must generate the output as a list of valid json objects.',
-            'The JSON objects are of the form:',
-            '{"source": "name of entity", "source_type": "entity type", "target": "name of entity", "target_type": "entity type", "relationship": "relationship type"}',
-            'The "entity type" describes extracted head entity identified by the "name of entity"',
-            'The "relationship type" relate to the extracted head entity identified by the "name of entity"',
-            '\n',
-            'Here is an example:', # This is known as one-shot training
-            '"John Doe works for Apple, and his son is Ben Doe"',
-            'which returns:',
-            '[{"source": "John Doe", "source_type": "Person", "target": "Apple", "target_type": "Company", "relationship": "MEMBER_OF"},',
-            '{"source": "John Doe", "source_type": "Person", "target": "Ben Doe", "target_type": "Person", "relationship": "RELATED_TO"}]',
-            '{"source": "Ben Doe", "source_type": "Person", "target": "John Doe", "target_type": "Person", "relationship": "RELATED_TO"}]',
-            '\n',
-            'Use ONLY the listed broad categories in "entity type" and "relationship type"',
-            'Only return the list of Json objects.',
-        ]
-        pre_prompt = "\n".join(pre_parts)
+    def _create_prompt(self, content: str) -> GenerateRequest:
+        return GenerateRequest(system_prompt="""
+You extract entities and relations from text to build a knowledge graph.
 
-        post_parts = [
-            f'The "entity type" must ONLY be from the following list: {list(self.vertex_types)}.',
-            f'The "relationship type" must ONLY be from the following list: {list(self.edge_types)}.',
-        ]
-        post_prompt = "\n".join(post_parts)
+Return ONLY a JSON array of objects. Each object must have exactly these fields:
 
-        return pre_prompt, post_prompt
+{
+"source": "name of entity",
+"source_type": "entity_type",
+"target": "name of entity",
+"target_type": "entity_type",
+"relationship": "relationship_type"
+}
+
+Use ONLY the allowed entity types and relationship types provided by the user.
+Do not invent entity types or relationship types.
+Do not include explanations, markdown, or additional text.
+            """,
+            query=f"""
+Extract the entities and relations from the following context.
+
+<context>
+{content}
+</context>
+
+Return only the JSON array.
+The "entity type" must ONLY be from the following list: <entity_type>{list(self.vertex_types)}</entity_type>.
+The "relationship type" must ONLY be from the following list: <relationship_type>{list(self.edge_types)}</relationship_type>.
+""")
     
     def _extract_jsons_from_text(self, text: str) -> list[dict]:
         extracted_jsons: list[dict] = []

@@ -1,13 +1,17 @@
 from enum import StrEnum
-from pydantic import BaseModel, ConfigDict, model_validator
+from pydantic import BaseModel, ConfigDict, model_validator, Field
 from datetime import datetime
 from typing import Any
+from typing import Literal
 
 class DocumentScope(StrEnum):
     CLIENT = "client"
     INTERNAL = "internal"
     ALL_CLIENTS = "all_clients"
 
+class GenerateRequest(BaseModel):
+	query: str
+	system_prompt: str | None = None
 
 class QueryRequest(BaseModel):
     """The request json the api expects"""
@@ -137,3 +141,26 @@ class ExtractedChunk:
     entity_id: int | None = None
     source_type: str = ""
     metadata: dict[str, Any] = field(default_factory=dict)
+
+
+class IndexRequest(BaseModel):
+    file_path: str
+    visibility: Literal["client", "internal"]
+    client_reference: str | None = None
+    tags: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_visibility(self):
+        self.file_path = self.file_path.strip()
+        self.client_reference = self.client_reference.strip() if self.client_reference else None
+        self.tags = sorted({tag.strip() for tag in self.tags if tag.strip()}, key=str.casefold)
+
+        if not self.file_path:
+            raise ValueError("filepath is required")
+        if self.visibility == "client" and not self.client_reference:
+            raise ValueError("client_reference is required for client visibility")
+        if self.visibility == "internal" and self.client_reference is not None:
+            raise ValueError("client_reference is only valid for client visibility")
+        if self.visibility == "client" and self.tags:
+            raise ValueError("tags are only supported for internal documents")
+        return self

@@ -2,9 +2,24 @@ from pathlib import Path
 
 from rag_pipeline import RAGPipeline
 from make_rag_pipeline import make_pipeline
-from pydantic_dataclasses import QueryRequest
-from pydantic_dataclasses import DocumentScope
+from pydantic_dataclasses import DocumentScope, IndexRequest, QueryRequest
 
+# TODO Tag classify once a lot of tags have been found to suggest tags!
+# "technical docs"
+#    │
+#    ├── exact alias lookup ──► technical-documentation
+#    │
+#    └── if not found:
+#           semantic matching
+#                 │
+#                 ▼
+#           candidate match
+#                 │
+#                 ▼
+#           human confirmation
+#                 │
+#                 ▼
+#           save alias
 # TODO Maybe have a cross embedding for a prompt description and the query to pick the relevant prompt?
 #   the above is approving an agentic approach, see last point
 # TODO glossary + thesaurus for sparse search
@@ -22,27 +37,37 @@ from pydantic_dataclasses import DocumentScope
 
 # hf files in ~/.cache/huggingface/hub
 
-def index_data(pipeline: RAGPipeline):
-    pass
+def index_data(pipeline: RAGPipeline) -> None:
+    def index_file(file_path: Path, client_reference: int | None) -> None:
+        request = IndexRequest(
+            file_path=str(file_path),
+            visibility="client" if client_reference is not None else "internal",
+            client_reference=(
+                str(client_reference) if client_reference is not None else None
+            ),
+        )
+        pipeline.index_file(request)
+        print(f'processed {file_path}')
+
     # probably best to make a queue trigger that can process files in blob storage as prompted by the queue
-    #pipeline.index_file(r'_data/mp3/example_mp3_1.mp3', client_reference=789) # Mr Bean
-    #pipeline.index_file(r'_data/txt/example_txt_1.txt', client_reference=654) # Miss Jones
-    # #pipeline.index_file(r'_data/eml/example_email_1.eml', client_reference=876) # Mr Thor
-    # for file in Path("_data/dr_amelia_jones").rglob("*"):
-    #     if file.is_file():
-    #         pipeline.index_file(file, client_reference=1001)
-    #for file in Path("_data/mr_smith").rglob("*"):
-    #    if file.is_file():
-    #        pipeline.index_file(file, client_reference=123)
-    #for file in Path("_data/ms_rose").rglob("*"):
-    #    if file.is_file():
-    #        pipeline.index_file(file, client_reference=456)
-    #for file in Path("_data/internal").rglob("*"):
-    #        if file.is_file():
-    #            pipeline.index_file(file, client_reference=None)
+    index_file(Path(r'_data/mp3/example_mp3_1.mp3'), client_reference=789) # Mr Bean
+    index_file(Path(r'_data/txt/example_txt_1.txt'), client_reference=654) # Miss Jones
+    index_file(Path(r'_data/eml/example_email_1.eml'), client_reference=876) # Mr Thor
+    for file in Path("_data/dr_amelia_jones").rglob("*"):
+        if file.is_file():
+            index_file(file, client_reference=1001)
+    for file in Path("_data/mr_smith").rglob("*"):
+        if file.is_file():
+            index_file(file, client_reference=123)
+    for file in Path("_data/ms_rose").rglob("*"):
+        if file.is_file():
+            index_file(file, client_reference=456)
+    for file in Path("_data/internal").rglob("*"):
+        if file.is_file():
+            index_file(file, client_reference=None)
     for file in Path("_data/pandas_user_guide").rglob("*"):
         if file.is_file():
-            pipeline.index_file(file, client_reference=None)
+            index_file(file, client_reference=None)
 
 def answer(query: str, client_ref: int | None, scope: DocumentScope, pipeline: RAGPipeline):
     query_request = QueryRequest(

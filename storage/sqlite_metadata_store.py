@@ -6,7 +6,7 @@ import threading
 import re
 
 from .base import MetadataStoreInterface
-from pydantic_dataclasses import QueryRequest, DocumentFilter, SearchResult, ExtractedChunk
+from pydantic_dataclasses import QueryRequest, DocumentFilter, SearchResult, ExtractedChunk, IndexRequest
 
 
 class SQLiteMetadataStore(MetadataStoreInterface):
@@ -32,16 +32,67 @@ class SQLiteMetadataStore(MetadataStoreInterface):
     def _create_schema(self) -> None:
         self.conn.execute(
             """
-            CREATE TABLE IF NOT EXISTS file_metadata (
-                doc_id INTEGER PRIMARY KEY,
-                file_name TEXT NOT NULL,
-                client_reference INTEGER NULL,
-                file_created_at TEXT,
+            CREATE TABLE IF NOT EXISTS documents (
+                id INTEGER PRIMARY KEY,
+                title TEXT NOT NULL,
+                content TEXT NOT NULL DEFAULT '',
+                document_type TEXT NOT NULL,
+                visibility TEXT NOT NULL DEFAULT 'internal',
+                created_at TEXT,
                 created_by TEXT,
                 metadata_json TEXT
             )
             """
         )
+        self.conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS document_clients (
+                document_id INTEGER NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+                client_ref TEXT NOT NULL,
+                PRIMARY KEY (document_id, client_ref)
+            )
+            """
+        )
+        self.conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS tags (
+                id INTEGER PRIMARY KEY,
+                name TEXT NOT NULL UNIQUE
+            )
+            """
+        )
+        self.conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS document_tags (
+                document_id INTEGER NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+                tag_id INTEGER NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
+                PRIMARY KEY (document_id, tag_id)
+            )
+            """
+        )
+
+        # Keep databases created before the normalized schema usable.
+        if self.conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'file_metadata'"
+        ).fetchone():
+            self.conn.execute(
+                """
+                INSERT OR IGNORE INTO documents
+                    (id, title, document_type, visibility, created_at, created_by, metadata_json)
+                SELECT doc_id, file_name, 'unknown',
+                    CASE WHEN client_reference IS NULL THEN 'internal' ELSE 'client' END,
+                    file_created_at, created_by, metadata_json
+                FROM file_metadata
+                """
+            )
+            self.conn.execute(
+                """
+                INSERT OR IGNORE INTO document_clients (document_id, client_ref)
+                SELECT doc_id, CAST(client_reference AS TEXT)
+                FROM file_metadata
+                WHERE client_reference IS NOT NULL
+                """
+            )
 
         self.conn.execute(
             """
@@ -52,7 +103,7 @@ class SQLiteMetadataStore(MetadataStoreInterface):
                 content TEXT NOT NULL,
                 locator_json TEXT,
                 metadata_json TEXT,
-                FOREIGN KEY (doc_id) REFERENCES file_metadata(doc_id) ON DELETE CASCADE
+                FOREIGN KEY (doc_id) REFERENCES documents(id) ON DELETE CASCADE
             )
             """
         )
@@ -60,28 +111,53 @@ class SQLiteMetadataStore(MetadataStoreInterface):
 
     def insert_document(
         self,
-        file_path: str | Path,
+        request: IndexRequest,
         source_type: str,
-        client_reference: int | None,
         metadata: dict[str, Any],
         chunks: list[ExtractedChunk],
     ) -> list[int]:
-        """Add one file to the file_metadata table and get the row id"""
-        file_path = Path(file_path)
+        """Add one document, its relationships, and chunks."""
+        file_path = Path(request.file_path)
         doc_id = self.conn.execute(
             """
-            INSERT INTO file_metadata (file_name, client_reference, file_created_at, created_by, metadata_json)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO documents
+                (title, content, document_type, visibility, created_at, created_by, metadata_json)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 file_path.name,
-                client_reference,
+                metadata.get("content", ""),
+                source_type,
+                request.visibility or ("client" if request.client_reference is not None else "internal"),
                 metadata.get("created_at"),
                 metadata.get("created_by"),
                 json.dumps(metadata, default=str),
             ),
         ).lastrowid
         assert isinstance(doc_id, int)
+
+        if request.client_reference is not None:
+            self.conn.execute(
+                "INSERT INTO document_clients (document_id, client_ref) VALUES (?, ?)",
+                (doc_id, str(request.client_reference)),
+            )
+
+        for tag_name in request.tags or ():
+            normalized_tag = tag_name.strip()
+            if not normalized_tag:
+                continue
+            self.conn.execute(
+                "INSERT OR IGNORE INTO tags (name) VALUES (?)",
+                (normalized_tag,),
+            )
+            tag_id = self.conn.execute(
+                "SELECT id FROM tags WHERE name = ?",
+                (normalized_tag,),
+            ).fetchone()[0]
+            self.conn.execute(
+                "INSERT OR IGNORE INTO document_tags (document_id, tag_id) VALUES (?, ?)",
+                (doc_id, tag_id),
+            )
 
         chunk_ids: list[int] = []
         for chunk in chunks:
@@ -105,20 +181,24 @@ class SQLiteMetadataStore(MetadataStoreInterface):
         self.conn.commit()
         return chunk_ids
 
+    def list_tags(self) -> list[str]:
+        rows = self.conn.execute("SELECT name FROM tags ORDER BY name COLLATE NOCASE").fetchall()
+        return [str(row["name"]) for row in rows]
+
     def search_by_chunk_ids(
         self,
         chunk_ids: list[int],
-        client_reference: int | None = None,
+        client_reference: int | str | None = None,
     ) -> list[SearchResult]:
         if not chunk_ids:
             return []
 
         placeholders = ", ".join("?" for _ in chunk_ids) # n ? for chunk_ids to parse into
-        parameters: list[int] = list(chunk_ids)
+        parameters: list[Any] = list(chunk_ids)
         client_filter = ""
         if client_reference is not None:
-            client_filter = " AND f.client_reference = ?"
-            parameters.append(client_reference)
+            client_filter = " AND EXISTS (SELECT 1 FROM document_clients dc WHERE dc.document_id = d.id AND dc.client_ref = ?)"
+            parameters.append(str(client_reference))
 
         rows = self.conn.execute(
             f"""
@@ -128,11 +208,12 @@ class SQLiteMetadataStore(MetadataStoreInterface):
                 c.source_type,
                 c.content,
                 c.locator_json,
-                f.file_name,
-                f.client_reference,
-                f.metadata_json
+                d.title,
+                d.metadata_json,
+                (SELECT dc.client_ref FROM document_clients dc WHERE dc.document_id = d.id LIMIT 1) AS client_reference,
+                (SELECT group_concat(t.name, ',') FROM document_tags dt JOIN tags t ON t.id = dt.tag_id WHERE dt.document_id = d.id) AS tag_names
             FROM chunk_records as c
-            JOIN file_metadata f ON f.doc_id = c.doc_id
+            JOIN documents d ON d.id = c.doc_id
             WHERE c.chunk_id IN ({placeholders})
             {client_filter}
             """,
@@ -148,9 +229,11 @@ class SQLiteMetadataStore(MetadataStoreInterface):
                     source_type=row["source_type"],
                     context=row["content"],
                     locator=json.loads(row["locator_json"] or "{}"),
-                    file_name=row["file_name"],
+                    file_name=row["title"],
                     metadata=json.loads(row["metadata_json"] or "{}") | {
-                        "client_reference": row["client_reference"]
+                        "client_reference": row["client_reference"],
+                        "client_references": self._client_references(row["doc_id"]),
+                        "tags": row["tag_names"].split(",") if row["tag_names"] else [],
                     }
                 )
             )
@@ -165,25 +248,25 @@ class SQLiteMetadataStore(MetadataStoreInterface):
         parameters: list[Any] = []
 
         if document_filter.client_reference is not None:
-            conditions.append("f.client_reference = ?")
-            parameters.append(document_filter.client_reference)
+            conditions.append("EXISTS (SELECT 1 FROM document_clients dc WHERE dc.document_id = d.id AND dc.client_ref = ?)")
+            parameters.append(str(document_filter.client_reference))
         elif not document_filter.include_internal:
-            conditions.append("f.client_reference IS NOT NULL")
+            conditions.append("EXISTS (SELECT 1 FROM document_clients dc WHERE dc.document_id = d.id)")
 
         if document_filter.client_references is not None:
             if not document_filter.client_references:
                 conditions.append("1 = 0")
             else:
                 placeholders = ", ".join("?" for _ in document_filter.client_references)
-                conditions.append(f"f.client_reference IN ({placeholders})")
-                parameters.extend(document_filter.client_references)
+                conditions.append(f"EXISTS (SELECT 1 FROM document_clients dc WHERE dc.document_id = d.id AND dc.client_ref IN ({placeholders}))")
+                parameters.extend(str(ref) for ref in document_filter.client_references)
 
         if document_filter.created_after is not None:
-            conditions.append("f.file_created_at >= ?")
+            conditions.append("d.created_at >= ?")
             parameters.append(document_filter.created_after.isoformat())
 
         if document_filter.created_before is not None:
-            conditions.append("f.file_created_at <= ?")
+            conditions.append("d.created_at <= ?")
             parameters.append(document_filter.created_before.isoformat())
 
         return conditions, parameters
@@ -194,7 +277,7 @@ class SQLiteMetadataStore(MetadataStoreInterface):
             f"""
             SELECT c.chunk_id
             FROM chunk_records AS c
-            JOIN file_metadata AS f ON f.doc_id = c.doc_id
+            JOIN documents AS d ON d.id = c.doc_id
             WHERE {" AND ".join(conditions)}
             """,
             parameters,
@@ -250,7 +333,7 @@ class SQLiteMetadataStore(MetadataStoreInterface):
                 bm25(context_fts) AS score
             FROM context_fts
             JOIN chunk_records AS c ON c.chunk_id = CAST(context_fts.id AS INTEGER)
-            JOIN file_metadata AS f ON f.doc_id = c.doc_id
+            JOIN documents AS d ON d.id = c.doc_id
             WHERE context_fts MATCH ?
             AND c.chunk_id IN ({placeholders}) 
             ORDER BY score
@@ -291,9 +374,9 @@ class SQLiteMetadataStore(MetadataStoreInterface):
                 bm25(context_fts) AS score
             FROM context_fts
             JOIN chunk_records AS c ON c.chunk_id = CAST(context_fts.id AS INTEGER)
-            JOIN file_metadata AS f ON f.doc_id = c.doc_id
+            JOIN documents AS d ON d.id = c.doc_id
             WHERE context_fts MATCH ?
-            AND f.client_reference IS NULL 
+            AND NOT EXISTS (SELECT 1 FROM document_clients dc WHERE dc.document_id = d.id)
             ORDER BY score
             LIMIT ?;
         """
@@ -308,3 +391,10 @@ class SQLiteMetadataStore(MetadataStoreInterface):
             )
             for i, m in enumerate(rows)
         ]
+
+    def _client_references(self, document_id: int) -> list[str]:
+        rows = self.conn.execute(
+            "SELECT client_ref FROM document_clients WHERE document_id = ? ORDER BY client_ref",
+            (document_id,),
+        ).fetchall()
+        return [str(row["client_ref"]) for row in rows]

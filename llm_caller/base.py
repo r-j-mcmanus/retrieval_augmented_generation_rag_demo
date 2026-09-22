@@ -11,5 +11,5 @@ class LLMCallerInterface(ABC):
         """Init method for a realised instance"""
 
     @abstractmethod
-    def call(self, prompt: str) -> LLMResponse:
+    def call(self, prompt: str, system_prompt: str | None = None, **kwargs) -> LLMResponse:
         """Hand the prompt to the LLM and return the response."""

@@ -1,4 +1,3 @@
-from pathlib import Path
 import os
 import requests
 
@@ -18,8 +17,11 @@ from pydantic_dataclasses import (
     QueryResponse,
     SearchResult,
     TokenUsage,
+    GenerateRequest
 )
 from search_scope_strategy import strategy_selector
+from rag_pipeline_components.ingestion import RAGIngestion
+
 
 # https://www.reddit.com/r/Rag/comments/1rf7xf6/whats_your_experience_with_hybrid_retrieval/
 
@@ -57,46 +59,20 @@ class RAGPipeline:
         self.knowledge_graph = knowledge_graph
         self.llm_url = llm_url.rstrip("/")
 
-    def call_llm(self, prompt: str) -> LLMResponse:
+        self.ingestion  = RAGIngestion(extractors, metadata_store, vector_store, encoder, preprocessor, knowledge_graph, self._call_llm)
+        self.index_file = self.ingestion.index_file
+
+    def _call_llm(self, prompt: str, system_prompt: str | None = None) -> LLMResponse:
         llm_response = requests.post(
             f"{self.llm_url}/generate",
-            json={"query": prompt},
+            json=GenerateRequest(
+                query = prompt,
+                system_prompt = system_prompt
+            ).model_dump(),
             timeout=300,
         )
         llm_response.raise_for_status()
         return LLMResponse.model_validate(llm_response.json())
-
-    def _get_extractor_for_file(self, file_path: str | Path) -> BaseDocumentExtractor:
-        suffix = Path(file_path).suffix.lower().lstrip(".")
-        extractor = self.extractors.get(suffix)
-        if extractor is None:
-            raise ValueError(f"No extractor registered for file type: {suffix}")
-        return extractor
-
-    def index_file(self, file_path: str | Path, client_reference: int | None):
-        file_path = Path(file_path)
-        extractor = self._get_extractor_for_file(file_path)
-        chunks, useful_metadata = extractor.extract_document(
-            file_path,
-            additional_metadata={"encoder": self.encoder.name},
-        )
-
-        #self.knowledge_graph.add_document(chunks, self.call_llm)
-        a=1
-        raise Exception
-
-        chunk_ids = self.metadata_store.insert_document(
-            file_path=file_path,
-            source_type=extractor.source_type,
-            client_reference=client_reference,
-            metadata=useful_metadata,
-            chunks=chunks,
-        )
-
-        chunk_contents = (self.preprocessor(chunk.content) for chunk in chunks)
-        encoded_chunk = self.encoder.encode_documents(chunk_contents)
-
-        self.vector_store.add_vectors(chunk_ids=chunk_ids, vectors=encoded_chunk)
 
     def _add_context(
         self,
@@ -244,7 +220,7 @@ class RAGPipeline:
     def _get_single_context_response(self, context: str, user_query: str, paths: list[IntentPath]) -> LLMResponse:
         answers = []
         for p in paths:
-            answer = p.evaluate_chunk(user_query, context, self.call_llm)
+            answer = p.evaluate_chunk(user_query, context, self._call_llm)
             answers.append((answer, p.intent.name))
             # Intents: {[p.intent.name for p in paths]}
 
@@ -259,7 +235,7 @@ class RAGPipeline:
             
             If there is no relevant information, respond with 'not relevant'
             """
-        response = self.call_llm(prompt)
+        response = self._call_llm(prompt)
         return response
     
     def _get_final_response(self, user_query: str, match_data: list[MatchData]) -> LLMResponse:
@@ -287,6 +263,6 @@ class RAGPipeline:
             3. Maintain objective tone.
         """
 
-        response = self.call_llm(prompt)
+        response = self._call_llm(prompt)
         return response
     

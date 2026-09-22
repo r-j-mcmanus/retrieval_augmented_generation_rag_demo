@@ -12,11 +12,7 @@ The design is modular via use of the interface pattern allowing additional sourc
 
 ## Set Up
 
-The codebase runs two processes, a streamlet app and a fast api endpoint. The app interacts with the rag system through this endpoint.
-
-To run the streamlet app, run `streamlit run dashboard.py`
-
-To run the api, run `uvicorn api:app --reload`
+run the file `run_all.bat`
 
 ## Architecture
 
@@ -27,6 +23,22 @@ The repository is organized around a few core pieces:
 - Storage layer: stores chunk metadata and vector representations
 - LLM layer: generates answers from retrieved context
 - Pipeline: coordinates indexing and retrieval
+
+## Relational metadata model
+
+The SQLite metadata store uses these normalized tables:
+
+- `documents`: document title, content, type, visibility, timestamps, and metadata
+- `document_clients`: many-to-many document/client references
+- `tags`: unique internal-document tag names
+- `document_tags`: many-to-many document/tag links
+- `chunk_records`: chunk content and the `doc_id` link back to `documents`
+
+`index_file(..., client_reference=...)` writes a client relationship, while
+`index_file(..., tags=[...])` associates tags with an internal document. Client
+scope filters use `document_clients`, so documents cannot be selected for a
+client unless that relationship exists. Existing SQLite databases are migrated
+from the former `file_metadata` table when the store starts.
 
 ## Document Extractors
 

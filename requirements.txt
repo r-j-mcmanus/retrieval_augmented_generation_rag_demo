@@ -10,6 +10,7 @@ usearch
 numpy
 transformers
 torch
+bitsandbytes
 bs4
 faster_whisper
 pypdf

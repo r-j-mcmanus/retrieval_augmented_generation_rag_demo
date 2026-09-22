@@ -1,9 +1,9 @@
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterable
 
 
-from pydantic_dataclasses import QueryRequest, DocumentFilter, SearchResult, ExtractedChunk
+from pydantic_dataclasses import QueryRequest, DocumentFilter, SearchResult, ExtractedChunk, IndexRequest
 
 class VectorStoreInterface(ABC):
     """Vector index backend for similarity search."""
@@ -28,9 +28,8 @@ class MetadataStoreInterface(ABC):
     @abstractmethod
     def insert_document(
         self,
-        file_path: str | Path,
+        request: IndexRequest,
         source_type: str,
-        client_reference: int | None,
         metadata: dict[str, Any],
         chunks: list[ExtractedChunk],
     )  -> list[int]:
@@ -40,13 +39,17 @@ class MetadataStoreInterface(ABC):
     def search_by_chunk_ids(
         self,
         chunk_ids: list[int],
-        client_reference: int | None = None,
+        client_reference: int | str | None = None,
     ) -> list[SearchResult]:
         """Return rows for the matched chunk ids, including file metadata."""
 
     @abstractmethod
     def get_chunk_ids(self, document_filter: DocumentFilter) -> set[int]:
         """Return all chunk IDs belonging to a client reference."""
+
+    @abstractmethod
+    def list_tags(self) -> list[str]:
+        """Return existing tag names for ingestion suggestions."""
 
     @abstractmethod
     def sparse_search(
