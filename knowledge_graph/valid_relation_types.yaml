@@ -1,11 +1,6 @@
-# Client / people
-- MEMBER_OF
-- RELATED_TO
-
-# Desire
-- NEED
-- COMPLAINT
-
-# Financial
-- HOLDS
-- LIABLE_FOR
+- relation: CLIENT
+  description: A person or entity who is a customer of the financial firm.
+- relation: HAS_MORTGAGE
+  description: Indicates that a client currently holds a mortgage.
+- relation: HAS_GOAL
+  description: Indicates a financial or mortgage-related objective that a client has expressed or is pursuing.

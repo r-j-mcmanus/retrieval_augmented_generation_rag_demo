@@ -1,12 +1,6 @@
-# Client / people
-- PERSON
-
-# Client needs
-- OBJECTIVE
-- CONSTRAINT
-- RISK_PROFILE
-
-# Financial
-- ASSET
-- FINANCIAL_LIABILITY
-- FINANCIAL_PRODUCT
+- entity: PERSON
+  description: Person of interest in the context
+- entity: MORTGAGE
+  description: Actual mortgage/loan contract
+- entity: PROPERTY
+  description: Asset securing the mortgage

@@ -224,18 +224,14 @@ class RAGPipeline:
             answers.append((answer, p.intent.name))
             # Intents: {[p.intent.name for p in paths]}
 
-        prompt = f"""You are analysing a document snippet to answer a query for a private wealth management firm.
-            Context Snippet:
-            `{context}`
-
-            User Query: `{user_query}`
-
+        system_prompt = f"""You are analysing a document snippet to answer a query for a private wealth management firm.
             Instructions:
             1. Extract ONLY facts from the snippet relevant to the User Query.
-            
-            If there is no relevant information, respond with 'not relevant'
-            """
-        response = self._call_llm(prompt)
+            2. If there is no relevant information, respond with 'not relevant'
+        """
+
+        prompt = f'<context>{context}</context><Query>{user_query}</Query>'
+        response = self._call_llm(prompt, system_prompt)
         return response
     
     def _get_final_response(self, user_query: str, match_data: list[MatchData]) -> LLMResponse:

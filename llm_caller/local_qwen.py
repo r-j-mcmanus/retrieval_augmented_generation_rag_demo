@@ -55,6 +55,7 @@ class LocalQwenLLMCaller(LLMCallerInterface):
             cache_dir=str(self.cache_folder),
             **self._model_loading_kwargs(),
         )
+        self.context_window = self._get_context_window()
 
         self.pipe = pipeline(
             "text-generation",
@@ -62,6 +63,15 @@ class LocalQwenLLMCaller(LLMCallerInterface):
             tokenizer=self.tokenizer,
             device=0 if self.device == "cuda" else -1,
         )
+
+    def _get_context_window(self) -> int:
+        """Return the model's input plus generated-token budget."""
+        model_limit = getattr(self.model.config, "max_position_embeddings", None)
+        tokenizer_limit = getattr(self.tokenizer, "model_max_length", None)
+        limits = [limit for limit in (model_limit, tokenizer_limit) if limit and limit < 10**6]
+        if not limits:
+            raise ValueError("Unable to determine the model context window")
+        return min(limits)
 
     def _model_loading_kwargs(self):
         kwargs: dict[str, Any] = {
@@ -114,8 +124,18 @@ class LocalQwenLLMCaller(LLMCallerInterface):
             add_generation_prompt=True,
         )
 
+        prompt_tokens = len(self.tokenizer.encode(formatted_prompt))
+        if prompt_tokens >= self.context_window:
+            raise ValueError(
+                f"Prompt uses {prompt_tokens} tokens, but the model context window "
+                f"is {self.context_window} tokens"
+            )
+
+        available_new_tokens = self.context_window - prompt_tokens
+        requested_new_tokens = kwargs.get("max_new_tokens", self.max_new_tokens)
+
         generation_kwargs = {
-            "max_new_tokens": kwargs.get("max_new_tokens", self.max_new_tokens),
+            "max_new_tokens": min(requested_new_tokens, available_new_tokens),
             "temperature": kwargs.get("temperature", self.temperature),
             "do_sample": kwargs.get("temperature", self.temperature) > 0,
             "pad_token_id": self.tokenizer.eos_token_id,

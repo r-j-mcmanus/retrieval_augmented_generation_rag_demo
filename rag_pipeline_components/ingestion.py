@@ -56,7 +56,11 @@ class RAGIngestion:
             additional_metadata={"encoder": self.encoder.name},
         )
 
-        self.knowledge_graph.add_document(chunks, self.call_llm)
+        self.knowledge_graph.add_document(
+            chunks,
+            self.call_llm,
+            client_reference=request.client_reference,
+        )
 
         return []
 
